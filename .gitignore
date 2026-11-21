@@ -1,0 +1,15 @@
+# Operating system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Machine-specific Codex MCP configuration
+/.codex/config.toml
+
+# Godot 4 editor and import cache, including local export credentials
+.godot/
+
+# Python bytecode from repository scripts
+__pycache__/
+*.pyc
