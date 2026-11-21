@@ -1,8 +1,7 @@
 78098b89c88a74ebe8c20117b8754620
-::res://::1795268662
+::res://::1795270963
 icon.svg::CompressedTexture2D::5540382912820140710::1795259781::1795259788::1::::<><><>0<>0<>a7087dac53bc9accdbce757b768552a9<>res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex::
 LICENSES.md::TextFile::-1::1795260572::0::1::::<><><>0<>0<><>::
-player_ship.tscn::PackedScene::5187500155087912767::1795268192::0::1::::<><><>0<>0<><>::uid://cd1o8hgofucwi::::res://Scripts/player_ship.gd<>uid://cy30hptdhtfub::::res://Assets/Art/Characters/ship_player.png
 ::res://Assets/::1795260567
 ::res://Assets/Art/::1795260567
 ::res://Assets/Art/Characters/::1795261715
@@ -23,9 +22,9 @@ sea.png::CompressedTexture2D::1298879300901794484::1795262531::1795262588::1::::
 ::res://LICENSES/CC0/::1795260604
 ::res://LICENSES/CC-BY/::1795260604
 ::res://LICENSES/CC-BY-SA/::1795260604
-::res://Scenes/::1795268640
-battle.tscn::PackedScene::8478697537294368217::1795268640::0::1::::<><><>0<>0<><>::uid://bhpv43i0k0qut::::res://Assets/Art/Environment/bg_sky.png<>uid://srgl8jqf5r4w::::res://Assets/Art/Environment/sea.png<>uid://dpswyvpr6nfgx::::res://Assets/Art/Environment/land.png<>uid://fg00sv1ueijb::::res://Assets/Art/Environment/lane_divider.png<>uid://v27whwbi8n78::::res://Scripts/lanes.gd<>uid://bq1x7pmship0a::::res://Scenes/player_ship.tscn
+::res://Scenes/::1795268963
+battle.tscn::PackedScene::8478697537294368217::1795268963::0::1::::<><><>0<>0<><>::uid://bhpv43i0k0qut::::res://Assets/Art/Environment/bg_sky.png<>uid://srgl8jqf5r4w::::res://Assets/Art/Environment/sea.png<>uid://dpswyvpr6nfgx::::res://Assets/Art/Environment/land.png<>uid://fg00sv1ueijb::::res://Assets/Art/Environment/lane_divider.png<>uid://v27whwbi8n78::::res://Scripts/lanes.gd<>res://Scenes/player_ship.tscn
 player_ship.tscn::PackedScene::-1::1795268086::0::1::::<><><>0<>0<><>::uid://cd1o8hgofucwi::::res://Scripts/player_ship.gd<>uid://cy30hptdhtfub::::res://Assets/Art/Characters/ship_player.png
-::res://Scripts/::1795268656
-lanes.gd::GDScript::1531686548699316029::1795267971::0::1::::Lanes<>Node2D<><>0<>0<><>::
-player_ship.gd::GDScript::5037991066579289772::1795268656::0::1::::<>CharacterBody2D<><>0<>0<><>::
+::res://Scripts/::1795268911
+lanes.gd::GDScript::1531686548699316029::1795268860::0::1::::Lanes<>Node2D<><>0<>0<><>::
+player_ship.gd::GDScript::5037991066579289772::1795268911::0::1::::<>CharacterBody2D<><>0<>0<><>::
