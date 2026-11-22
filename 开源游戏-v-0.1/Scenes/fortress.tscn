@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://cah7cxuq4d2et"]
+
+[ext_resource type="Script" path="res://Scripts/fortress.gd" id="1_fort"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fortress.png" id="2_tex"]
+
+[node name="Fortress" type="Node2D" unique_id=1402792039]
+z_index = 3
+script = ExtResource("1_fort")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1053245330]
+texture = ExtResource("2_tex")

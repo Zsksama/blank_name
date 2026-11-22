@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://df25c2thedw8i"]
+
+[ext_resource type="Script" uid="uid://cvuyvtr0jw4ro" path="res://Scripts/enemy_ship.gd" id="1_enemy"]
+[ext_resource type="Texture2D" uid="uid://dv8v6347k8hv4" path="res://Assets/Art/Characters/ship_enemy.png" id="2_tex"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_enemy"]
+size = Vector2(84, 32)
+
+[node name="EnemyShip" type="Area2D" unique_id=1694890312]
+z_index = 5
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("1_enemy")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1375947794]
+texture = ExtResource("2_tex")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=685686723]
+shape = SubResource("RectangleShape2D_enemy")
