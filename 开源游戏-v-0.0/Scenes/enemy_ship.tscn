@@ -1,0 +1,81 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/enemy_ship.gd" id="1_enemy"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Characters/ship_enemy.png" id="2_tex"]
+[ext_resource type="Script" path="res://Scripts/ship_part_box.gd" id="3_box"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Effects/sail_torn_small.png" id="4_torn"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Effects/sail_ruined_small.png" id="5_ruined"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Effects/hull_burn_small.png" id="6_burn"]
+
+[sub_resource type="RectangleShape2D" id="Shape_body"]
+size = Vector2(270, 180)
+
+[sub_resource type="RectangleShape2D" id="Shape_sail"]
+size = Vector2(117, 56)
+
+[sub_resource type="RectangleShape2D" id="Shape_cannon"]
+size = Vector2(81, 40)
+
+[sub_resource type="RectangleShape2D" id="Shape_hull"]
+size = Vector2(234, 43)
+
+[node name="EnemyShip" type="Area2D"]
+z_index = 20
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("1_enemy")
+sail_torn_texture = ExtResource("4_torn")
+sail_ruined_texture = ExtResource("5_ruined")
+hull_burn_texture = ExtResource("6_burn")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("Shape_body")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_tex")
+
+[node name="SailOverlay" type="Sprite2D" parent="."]
+visible = false
+position = Vector2(0, -43)
+texture = ExtResource("4_torn")
+
+[node name="HullOverlay" type="Sprite2D" parent="."]
+visible = false
+position = Vector2(0, 56)
+texture = ExtResource("6_burn")
+
+[node name="SailBox" type="Area2D" parent="."]
+collision_layer = 8
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_box")
+part = 1
+soft = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="SailBox"]
+position = Vector2(0, -43)
+shape = SubResource("Shape_sail")
+
+[node name="CannonBox" type="Area2D" parent="."]
+collision_layer = 8
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_box")
+part = 2
+soft = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CannonBox"]
+position = Vector2(76, 9)
+shape = SubResource("Shape_cannon")
+
+[node name="HullBox" type="Area2D" parent="."]
+collision_layer = 8
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_box")
+part = 0
+soft = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HullBox"]
+position = Vector2(0, 56)
+shape = SubResource("Shape_hull")

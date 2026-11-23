@@ -1,0 +1,104 @@
+[gd_scene format=3 uid="uid://dx3iav2bs4ju0"]
+
+[ext_resource type="Script" uid="uid://cd1o8hgofucwi" path="res://Scripts/player_ship.gd" id="1_ship"]
+[ext_resource type="Texture2D" uid="uid://cy30hptdhtfub" path="res://Assets/Art/Characters/ship_player.png" id="2_tex"]
+[ext_resource type="Script" uid="uid://bp5east74v7yq" path="res://Scripts/ship_part_box.gd" id="3_box"]
+[ext_resource type="Script" uid="uid://bxyievayxtg6n" path="res://Scripts/player_weapon.gd" id="4_weapon"]
+[ext_resource type="Texture2D" uid="uid://cwsrgruq2smfi" path="res://Assets/Art/Characters/turret_ship.png" id="5_turret"]
+[ext_resource type="Texture2D" uid="uid://sedjcxd5fyap" path="res://Assets/Art/Effects/sail_torn_large.png" id="6_torn"]
+[ext_resource type="Texture2D" uid="uid://bx86fe1eglgbp" path="res://Assets/Art/Effects/sail_ruined_large.png" id="7_ruined"]
+[ext_resource type="Texture2D" uid="uid://chlhcuhm4sc03" path="res://Assets/Art/Effects/hull_burn_large.png" id="8_burn"]
+
+[sub_resource type="RectangleShape2D" id="Shape_body"]
+size = Vector2(306, 194)
+
+[sub_resource type="RectangleShape2D" id="Shape_sail"]
+size = Vector2(171, 56)
+
+[sub_resource type="RectangleShape2D" id="Shape_cannon"]
+size = Vector2(99, 40)
+
+[sub_resource type="RectangleShape2D" id="Shape_hull"]
+size = Vector2(270, 56)
+
+[node name="PlayerShip" type="CharacterBody2D" unique_id=1684332941]
+z_index = 20
+position = Vector2(420, 360)
+script = ExtResource("1_ship")
+sail_torn_texture = ExtResource("6_torn")
+sail_ruined_texture = ExtResource("7_ruined")
+hull_burn_texture = ExtResource("8_burn")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1846862248]
+shape = SubResource("Shape_body")
+
+[node name="Body" type="Node2D" parent="." unique_id=441170148]
+
+[node name="Sprite2D" type="Sprite2D" parent="Body" unique_id=442718917]
+texture = ExtResource("2_tex")
+
+[node name="SailOverlay" type="Sprite2D" parent="Body" unique_id=968501913]
+visible = false
+position = Vector2(0, -42)
+texture = ExtResource("6_torn")
+
+[node name="HullOverlay" type="Sprite2D" parent="Body" unique_id=1023516647]
+visible = false
+position = Vector2(0, 62)
+texture = ExtResource("8_burn")
+
+[node name="SailBox" type="Area2D" parent="Body" unique_id=1279277452]
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_box")
+part = 1
+soft = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Body/SailBox" unique_id=253934961]
+position = Vector2(0, -42)
+shape = SubResource("Shape_sail")
+
+[node name="CannonBox" type="Area2D" parent="Body" unique_id=662551750]
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_box")
+part = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Body/CannonBox" unique_id=1359475246]
+position = Vector2(63, 9)
+shape = SubResource("Shape_cannon")
+
+[node name="HullBox" type="Area2D" parent="Body" unique_id=1714483692]
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_box")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Body/HullBox" unique_id=340414721]
+position = Vector2(0, 62)
+shape = SubResource("Shape_hull")
+
+[node name="Weapon" type="Node2D" parent="Body" unique_id=1537342830]
+position = Vector2(4, 0)
+script = ExtResource("4_weapon")
+muzzle_len = 100.0
+turret_pivots = [Vector2(40, 30), Vector2(-46, 30)]
+show_reload_labels = false
+
+[node name="Turret0" type="Sprite2D" parent="Body/Weapon" unique_id=945373098]
+z_index = 1
+texture = ExtResource("5_turret")
+offset = Vector2(60, 0)
+
+[node name="Turret1" type="Sprite2D" parent="Body/Weapon" unique_id=1940116805]
+z_index = 1
+texture = ExtResource("5_turret")
+offset = Vector2(60, 0)
+
+[node name="Preview" type="Line2D" parent="Body/Weapon" unique_id=96133667]
+top_level = true
+z_index = 3
+width = 2.0
+default_color = Color(0.98, 0.9, 0.6, 0.5)
