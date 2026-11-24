@@ -1,43 +1,186 @@
+class_name PlayerShip
 extends CharacterBody2D
-@export var move_speed: float = 300.0
+
+signal sunk(ship: PlayerShip)
+
+@export_group("航行")
+@export var move_speed: float = 25.0
 @export var lanes_path: NodePath = ^"../Lanes"
-## 换道阻尼强度：越大越快贴上道中心，越小越"漂"
-@export_range(1.0, 40.0, 0.5) var lane_change_smoothing: float = 20.0
-var _target_lane: int = 0
-var _lanes: Node
+@export var lane_switch_time: float = 0.6
+
+@export_group("船体")
+@export_range(0.1, 1.0, 0.01) var ship_scale: float = 0.25
+@export var art_keel_y: float = 90.0
+@export var waterline_submerge: float = 1.0
+@export var damage_profile: ShipDamageProfile
+@export var sail_cutout := Rect2(96, 37, 151, 48)
+@export var sail_torn_texture: Texture2D
+@export var sail_ruined_texture: Texture2D
+@export var hull_burn_texture: Texture2D
+
+@export_group("自动维修")
+@export var repair_base_rate: float = 0.5
+@export var repair_discount_broken: float = 1.0
+@export var repair_discount_destroyed: float = 0.2
+@export var max_repair_ratio: float = 0.6
+
+@export_group("后坐力")
+@export var recoil_impulse: float = 10.0
+@export var recoil_sink: float = 5.0
+@export var recoil_pitch: float = 4.0
+@export var recoil_recover_time: float = 1.0
+@export_range(1.0, 4.0, 0.1) var recoil_recover_power: float = 2.0
+@export var recoil_max: float = 2.0
+
+var lane_index: int:
+	get:
+		return combat.lane_index
+var lane_change_fail_reason := ""
+var lane_offset_y := 0.0
+var wave_offset := 0.0
+var _lanes: Lanes
+var _switch_remaining := 0.0
+var _switch_duration := 0.0
+var _switch_from := 0.0
+var _recoil := 0.0
+var _recoil_start := 0.0
+var _recoil_elapsed := 0.0
+
+@onready var combat: ShipCombat = $Combat
+@onready var _weapon: PlayerWeapon = $Combat/Weapon
+
 
 func _ready() -> void:
-	_lanes = get_node_or_null(lanes_path)
-	if _lanes:
-		_target_lane = _lanes.lane_index_at_y(global_position.y)
+	var sprite := combat.get_node("Sprite2D") as Sprite2D
+	var ship_size := sprite.texture.get_size() * ship_scale
+	combat.configure(damage_profile, ship_size, 1.0)
+	combat.configure_damage_art(sail_torn_texture, sail_ruined_texture, hull_burn_texture, sail_cutout)
+	combat.sunk.connect(_on_sunk)
+
+	combat.position.y = waterline_submerge - art_keel_y * ship_scale
+	var collider := $CollisionShape2D as CollisionShape2D
+	var shape := RectangleShape2D.new()
+	shape.size = ship_size
+	collider.shape = shape
+	collider.position.y = combat.position.y
+	_weapon.configure_turrets(combat.get_node("Hitboxes/hit_cannon") as CollisionShape2D)
+	_lanes = get_node_or_null(lanes_path) as Lanes
+	if _lanes != null:
+		combat.lane_index = maxi(_lanes.lane_index_at_bottom_y(global_position.y), 0)
+		_lanes.register_ship(combat)
+		_apply_lane_pose()
+
 
 func _physics_process(delta: float) -> void:
-	var dir_x: float = Input.get_axis("move_left", "move_right")
-	velocity.x = dir_x * move_speed
-	
-	# 找不到海道时退回自由四向移动
+	_update_recoil(delta)
+	_update_repair(delta)
+	var speed := move_speed * combat.parts.speed_multiplier()
 	if _lanes == null:
-		velocity.y = Input.get_axis("move_up", "move_down") * move_speed
+		velocity = Vector2(Input.get_axis("move_left", "move_right"), Input.get_axis("move_up", "move_down")) * speed
 		move_and_slide()
 		return
-	
-	velocity.y = 0.0
-	if Input.is_action_just_pressed("move_up"):
-		_target_lane -= 1
-	if Input.is_action_just_pressed("move_down"):
-		_target_lane += 1
 
-	move_and_slide()
+	if not is_switching():
+		if Input.is_action_just_pressed("move_up"):
+			try_change_lane(lane_index - 1)
+		elif Input.is_action_just_pressed("move_down"):
+			try_change_lane(lane_index + 1)
 
-	_target_lane = _lanes.clamp_lane_index(_target_lane)
-	var target_y: float = _lanes.lane_center_y(_target_lane)
-	var weight: float = 1.0 - exp(-lane_change_smoothing * delta)
-	global_position.y = lerp(global_position.y, target_y, weight)
+	velocity = Vector2.ZERO
+	if is_switching():
+		_switch_remaining = maxf(0.0, _switch_remaining - delta)
+		if is_zero_approx(_switch_remaining):
+			combat.previous_lane = -1
+	if not is_switching():
+		var next_x := global_position.x + Input.get_axis("move_left", "move_right") * speed * delta
+		var allowed_x := _lanes.limit_ship_x(combat, next_x)
+		velocity.x = (allowed_x - global_position.x) / delta
+		move_and_slide()
+	_apply_lane_pose()
 
-## 炮口位置：船体贴图 96x40，炮口在右侧边缘。开火由 battle_manager 负责，这里只提供坐标。
-func muzzle_position() -> Vector2:
-	return global_position + Vector2(52.0, 0.0)
 
-## 当前所在（正在前往）的海道序号。
+func try_change_lane(index: int) -> bool:
+	lane_change_fail_reason = ""
+	if _lanes == null or not combat.targetable or is_switching():
+		return false
+	if index != _lanes.clamp_lane_index(index) or index == lane_index:
+		return false
+	if not _lanes.has_space(index, global_position.x, combat.size.x, combat.min_gap, combat):
+		lane_change_fail_reason = "有人"
+		return false
+	var multiplier := combat.parts.lane_switch_multiplier()
+	if is_inf(multiplier):
+		lane_change_fail_reason = "舵已破坏"
+		return false
+	_switch_from = _lanes.lane_bottom_y(lane_index) - _lanes.lane_bottom_y(index)
+	_switch_duration = maxf(lane_switch_time * multiplier, 0.01)
+	_switch_remaining = _switch_duration
+	combat.previous_lane = lane_index
+	combat.lane_index = index
+	_apply_lane_pose()
+	return true
+
+
+func is_switching() -> bool:
+	return combat.previous_lane >= 0
+
+
 func current_lane() -> int:
-	return _target_lane
+	return lane_index
+
+
+func muzzle_position(_heading: float = 1.0) -> Vector2:
+	return _weapon.muzzle_global()
+
+
+func add_recoil(heading_x: float, amount: float = 1.0) -> void:
+	var next := minf(recoil_max, _recoil + amount)
+	var proposed_x := global_position.x - heading_x * recoil_impulse * (next - _recoil)
+	var allowed_x := proposed_x if _lanes == null else _lanes.limit_ship_x(combat, proposed_x)
+	move_and_collide(Vector2(allowed_x - global_position.x, 0.0))
+	_recoil_start = next
+	_recoil = next
+	_recoil_elapsed = 0.0
+	_apply_lane_pose()
+
+
+func _update_recoil(delta: float) -> void:
+	if _recoil <= 0.0:
+		return
+	_recoil_elapsed += delta
+	var remaining := 1.0 - clampf(_recoil_elapsed / maxf(recoil_recover_time, 0.001), 0.0, 1.0)
+	_recoil = _recoil_start * pow(remaining, recoil_recover_power)
+
+
+func _apply_lane_pose() -> void:
+	if _lanes == null:
+		return
+	var draw_lane := lane_index
+	if is_switching():
+		var progress := 1.0 - _switch_remaining / _switch_duration
+		lane_offset_y = _switch_from * (1.0 - smoothstep(0.0, 1.0, progress))
+		draw_lane = maxi(combat.previous_lane, lane_index)
+		combat.rotation_degrees = 0.0
+	else:
+		lane_offset_y = recoil_sink * _recoil
+		combat.rotation_degrees = -recoil_pitch * _recoil
+	z_index = _lanes.content_z(draw_lane)
+	global_position.y = _lanes.lane_bottom_y(lane_index) + lane_offset_y + wave_offset
+
+
+func _update_repair(delta: float) -> void:
+	for part in ShipParts.Part.values():
+		var full := combat.parts.max_hp(part)
+		var condition := combat.parts.condition(part)
+		if condition == ShipParts.Condition.NORMAL:
+			continue
+		var discount := repair_discount_destroyed if condition == ShipParts.Condition.DESTROYED else repair_discount_broken
+		combat.parts.repair_toward(part, full * repair_base_rate * discount * delta / 100.0, full * max_repair_ratio)
+
+
+func _on_sunk() -> void:
+	set_physics_process(false)
+	$CollisionShape2D.set_deferred("disabled", true)
+	_weapon.hide()
+	combat.play_sinking()
+	sunk.emit(self)

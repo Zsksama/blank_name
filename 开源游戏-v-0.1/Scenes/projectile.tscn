@@ -5,17 +5,20 @@
 [ext_resource type="Texture2D" path="res://Assets/Art/Effects/smoke_puff.png" id="3_puff"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_ball"]
-radius = 7.0
+radius = 2.5
 
 [node name="Projectile" type="Area2D"]
 z_index = 6
-collision_layer = 4
-collision_mask = 2
+process_physics_priority = 20
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
 script = ExtResource("1_proj")
 puff_texture = ExtResource("3_puff")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-scale = Vector2(1.25, 1.25)
+scale = Vector2(0.31, 0.31)
 texture = ExtResource("2_ball")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
