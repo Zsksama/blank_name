@@ -7,10 +7,23 @@ const PartKind := preload("res://Scripts/data/part_kind.gd")
 
 signal sunk(ship: Area2D)
 signal breached(ship: Area2D)
+## T-304：停船后每隔 attack_interval 秒对堡造成一次伤害
+signal attacked_fort(damage: float)
+## T-305：破堡演出，船走进水门
+signal entered_gate(ship: Area2D)
 
 @export var speed: float = 70.0
-## 越过这条 X 线就算冲破防线（默认 = 海面左边界）
-@export var breach_x: float = 268.0
+## 越过这条 X 线就算冲破防线（默认 = 海面左边界；T-304 起敌人会先停船）
+@export var breach_x: float = 100.0
+
+@export_group("对堡攻击（T-304）")
+## 停船位置：到这个 X 就停住持续开火（模板 320，双方都打得到）
+@export var stop_distance: float = 120.0
+## 每次攻击对堡造成的伤害（E-01：8 伤 / 3 秒）
+@export var attack_damage: float = 8.0
+@export var attack_interval: float = 3.0
+## 第一次攻击的延迟，避免刚停下就掉血
+@export var first_attack_delay: float = 1.0
 ## 倭船 E-01 占位：舰体 40 / 帆 30 / 炮台 20 / 舵 15 / 撞角 15
 @export var part_hp_max: Array[int] = [40, 30, 20, 15, 15]
 
@@ -18,6 +31,8 @@ signal breached(ship: Area2D)
 @export var base_z_index: int = 20
 @export var z_step_per_lane: int = 10
 @export var perspective_scale_per_lane: float = 0.04
+## 整船基准缩放：贴图与碰撞箱一起缩，1.0 = 原始贴图尺寸
+@export var base_scale: float = 1.0
 ## 船底对齐航道中线（关掉=船体中心对齐中线）
 @export var align_bottom_to_lane_center: bool = true
 ## 半个船身高（px，未缩放）。_ready 里会按碰撞箱自动校正
@@ -40,12 +55,25 @@ var lane_index: int = 0
 var lane_center_y: float = -1.0
 var part_hp: Array[int] = []
 var is_sunk: bool = false
+## 是否已经在停船开火（T-304）
+var is_attacking_fort: bool = false
+## 破堡演出中：正在驶向水门
+var is_entering_gate: bool = false
+## 进入水门的目标 X
+var gate_target_x: float = -60.0
+## 望楼/标记钩子（T-306 预留，本期只存不生效）
+var is_marked: bool = false
 
 var _config: Node = null
 var _alive: bool = true
 var _sail_overlay: Sprite2D = null
 var _hull_overlay: Sprite2D = null
 var _body_sprite: Sprite2D = null
+var _attack_timer: float = 0.0
+var _attack_enabled: bool = true
+var _gate_x: float = -140.0
+## 破堡演出航速（px/s）
+var _gate_speed: float = 260.0
 
 
 func _ready() -> void:
@@ -56,7 +84,7 @@ func _ready() -> void:
 		var src: int = part_hp_max[i] if i < part_hp_max.size() else 20
 		part_hp[i] = src
 	z_index = base_z_index + lane_index * z_step_per_lane
-	var s: float = 1.0 + perspective_scale_per_lane * float(lane_index)
+	var s: float = base_scale * (1.0 + perspective_scale_per_lane * float(lane_index))
 	scale = Vector2(s, s)
 	var cs := get_node_or_null("CollisionShape2D") as CollisionShape2D
 	if cs != null and cs.shape is RectangleShape2D:
@@ -233,8 +261,50 @@ func _sink() -> void:
 
 # ---------- 推进 ----------
 
+func set_attack_enabled(enabled: bool) -> void:
+	_attack_enabled = enabled
+	if not enabled:
+		is_attacking_fort = false
+
+
+## T-305 破堡演出：忽略 stop_distance，一路驶向水门，到了发 entered_gate
+func enter_gate(gate_x: float) -> void:
+	if not _alive or is_sunk:
+		return
+	is_entering_gate = true
+	_attack_enabled = false
+	is_attacking_fort = false
+	_gate_x = gate_x
+	gate_target_x = gate_x
+	z_index += 5
+
+
+func mark() -> void:
+	is_marked = true
+
+
 func _process(delta: float) -> void:
 	if not _alive or is_sunk:
+		return
+	if is_entering_gate:
+		# 破堡演出：驶向水门（比正常航速快，保证演出来得及）
+		global_position.x -= _gate_speed * delta
+		if global_position.x <= _gate_x:
+			is_entering_gate = false
+			_alive = false
+			entered_gate.emit(self)
+			queue_free()
+		return
+	# T-304：到停船位就停下来持续开火
+	if global_position.x <= stop_distance:
+		if not is_attacking_fort:
+			is_attacking_fort = true
+			_attack_timer = first_attack_delay
+		_attack_timer -= delta
+		if _attack_timer <= 0.0:
+			_attack_timer = attack_interval
+			if _attack_enabled:
+				attacked_fort.emit(attack_damage)
 		return
 	global_position.x -= current_speed() * delta
 	if global_position.x <= breach_x:

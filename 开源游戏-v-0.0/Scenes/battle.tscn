@@ -10,6 +10,10 @@
 [ext_resource type="Script" uid="uid://cu6cbw4btdhf6" path="res://Scripts/data/combat_config.gd" id="8_config"]
 [ext_resource type="Texture2D" uid="uid://c6752u1otieqv" path="res://Assets/Art/UI/crosshair.png" id="9_cross"]
 [ext_resource type="Script" uid="uid://cggt6idsp3k0g" path="res://Scripts/ui/reload_ring.gd" id="10_ring"]
+[ext_resource type="Texture2D" uid="uid://bb3n07tk6k24i" path="res://Assets/Art/Environment/fort_intact.png" id="11_fort0"]
+[ext_resource type="Texture2D" uid="uid://busbpotuwg122" path="res://Assets/Art/Environment/fort_damaged.png" id="12_fort1"]
+[ext_resource type="Texture2D" uid="uid://dh6lvw0gvsudk" path="res://Assets/Art/Environment/fort_broken.png" id="13_fort2"]
+[ext_resource type="Texture2D" uid="uid://ctfxms78la6q5" path="res://Assets/Art/Environment/fort_gone.png" id="14_fort3"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_v"]
 size = Vector2(8, 720)
@@ -17,90 +21,113 @@ size = Vector2(8, 720)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_h"]
 size = Vector2(1020, 8)
 
-[node name="Battle" type="Node2D" unique_id=611586165]
+[node name="Battle" type="Node2D" unique_id=391738124]
 script = ExtResource("7_manager")
+fort_texture_intact = ExtResource("11_fort0")
+fort_texture_damaged = ExtResource("12_fort1")
+fort_texture_broken = ExtResource("13_fort2")
+fort_texture_gone = ExtResource("14_fort3")
 
-[node name="Background" type="Sprite2D" parent="." unique_id=567333111]
+[node name="Background" type="Sprite2D" parent="." unique_id=1685786149]
 position = Vector2(640, 360)
 texture = ExtResource("1_bg")
 
-[node name="Sea" type="Sprite2D" parent="." unique_id=2035680721]
-position = Vector2(770, 360)
+[node name="Sea" type="Sprite2D" parent="." unique_id=721974430]
+position = Vector2(670, 432)
+scale = Vector2(1, 0.8)
 texture = ExtResource("2_sea")
 
-[node name="Land" type="Sprite2D" parent="." unique_id=1900599469]
-position = Vector2(130, 360)
+[node name="Land" type="Sprite2D" parent="." unique_id=540669217]
+position = Vector2(30, 432)
+scale = Vector2(1, 0.8)
 texture = ExtResource("3_land")
 
-[node name="Lanes" type="Node2D" parent="." unique_id=115387262]
-position = Vector2(5, -3)
+[node name="Lanes" type="Node2D" parent="." unique_id=405646499]
 script = ExtResource("5_lanes")
 divider_texture = ExtResource("4_divider")
+sea_left = 60.0
+sea_top = 144.0
 
-[node name="CombatConfig" type="Node" parent="." unique_id=1637146987]
+[node name="CombatConfig" type="Node" parent="." unique_id=1646636616]
 script = ExtResource("8_config")
 shell_damage = Array[float]([20.0, 20.0, 20.0])
-pierce_damage_falloff = 10.0
 
-[node name="Fortress" type="Node2D" parent="." unique_id=380633470]
+[node name="Fortress" type="Node2D" parent="." unique_id=417894526]
 
-[node name="Enemies" type="Node2D" parent="." unique_id=1572531849]
+[node name="FortVisual" type="Sprite2D" parent="Fortress" unique_id=1527506215]
+position = Vector2(30, 432)
+texture = ExtResource("11_fort0")
 
-[node name="Projectiles" type="Node2D" parent="." unique_id=1149171115]
+[node name="Enemies" type="Node2D" parent="." unique_id=732465101]
 
-[node name="Walls" type="Node2D" parent="." unique_id=519967956]
+[node name="Projectiles" type="Node2D" parent="." unique_id=597677585]
 
-[node name="WallLeft" type="StaticBody2D" parent="Walls" unique_id=1601315593]
-position = Vector2(256, 360)
+[node name="Walls" type="Node2D" parent="." unique_id=1378234534]
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallLeft" unique_id=961454481]
+[node name="WallLeft" type="StaticBody2D" parent="Walls" unique_id=1737757586]
+position = Vector2(68, 420)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallLeft" unique_id=1097687790]
 shape = SubResource("RectangleShape2D_wall_v")
 
-[node name="WallRight" type="StaticBody2D" parent="Walls" unique_id=2086354072]
-position = Vector2(1284, 360)
+[node name="WallRight" type="StaticBody2D" parent="Walls" unique_id=1622188942]
+position = Vector2(1284, 420)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallRight" unique_id=1372108612]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallRight" unique_id=1682013699]
 shape = SubResource("RectangleShape2D_wall_v")
 
-[node name="WallTop" type="StaticBody2D" parent="Walls" unique_id=1615415739]
-position = Vector2(770, -4)
+[node name="WallTop" type="StaticBody2D" parent="Walls" unique_id=974146124]
+position = Vector2(770, 138)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallTop" unique_id=1383834179]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallTop" unique_id=1652129558]
 shape = SubResource("RectangleShape2D_wall_h")
 
-[node name="WallBottom" type="StaticBody2D" parent="Walls" unique_id=1351699075]
+[node name="WallBottom" type="StaticBody2D" parent="Walls" unique_id=1439964669]
 position = Vector2(770, 724)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallBottom" unique_id=1965634775]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallBottom" unique_id=1705801829]
 shape = SubResource("RectangleShape2D_wall_h")
 
-[node name="PlayerShip" parent="." unique_id=1346835439 instance=ExtResource("6_ship")]
+[node name="PlayerShip" parent="." unique_id=797611905 instance=ExtResource("6_ship")]
 
-[node name="Crosshair" type="Sprite2D" parent="." unique_id=1952633240]
+[node name="Crosshair" type="Sprite2D" parent="." unique_id=862397599]
 z_index = 60
 texture = ExtResource("9_cross")
 
-[node name="HUD" type="CanvasLayer" parent="." unique_id=2039190999]
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1779804571]
 
-[node name="Status" type="Label" parent="HUD" unique_id=894225714]
+[node name="Status" type="Label" parent="HUD" unique_id=1912540511]
 offset_left = 272.0
 offset_top = 8.0
 offset_right = 1270.0
-offset_bottom = 78.0
+offset_bottom = 76.0
 theme_override_colors/font_color = Color(0.94, 0.96, 0.99, 1)
 theme_override_font_sizes/font_size = 20
 text = "开始"
 
-[node name="Hint" type="Label" parent="HUD" unique_id=95249816]
+[node name="Alert" type="Label" parent="HUD" unique_id=213824943]
+offset_left = 240.0
+offset_top = 290.0
+offset_right = 1040.0
+offset_bottom = 390.0
+theme_override_colors/font_color = Color(0.96, 0.74, 0.52, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.55)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 96
+
+horizontal_alignment = 1
+vertical_alignment = 1
+[node name="Hint" type="Label" parent="HUD" unique_id=1332066534]
 offset_left = 272.0
-offset_top = 688.0
+offset_top = 686.0
 offset_right = 1270.0
-offset_bottom = 716.0
+offset_bottom = 714.0
 theme_override_colors/font_color = Color(0.86, 0.9, 0.95, 0.85)
 theme_override_font_sizes/font_size = 15
 text = "鼠标瞄准 · 左键开火 · 1/2/3 换弹 · Q 切换齐射 · A/D 航行 · W/S 换道"
 
-[node name="Banner" type="Label" parent="HUD" unique_id=298166628]
+[node name="Banner" type="Label" parent="HUD" unique_id=828393141]
 offset_left = 240.0
 offset_top = 290.0
 offset_right = 1040.0
@@ -110,6 +137,6 @@ theme_override_font_sizes/font_size = 46
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ReloadRing" type="Node2D" parent="HUD" unique_id=795453989]
-position = Vector2(96, 612)
+[node name="ReloadRing" type="Node2D" parent="HUD" unique_id=1024003132]
+position = Vector2(62, 58)
 script = ExtResource("10_ring")

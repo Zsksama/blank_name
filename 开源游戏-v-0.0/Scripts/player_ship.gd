@@ -29,6 +29,8 @@ const PartKind := preload("res://Scripts/data/part_kind.gd")
 @export var base_z_index: int = 21
 @export var z_step_per_lane: int = 10
 @export var perspective_scale_per_lane: float = 0.04
+## 整船基准缩放：贴图与碰撞箱一起缩，1.0 = 原始贴图尺寸
+@export var base_scale: float = 1.0
 ## 船底对齐航道中线（关掉=船体中心对齐中线）
 @export var align_bottom_to_lane_center: bool = true
 ## 半个船身高（px，未缩放）。_ready 里会按碰撞箱自动校正
@@ -51,6 +53,8 @@ const PartKind := preload("res://Scripts/data/part_kind.gd")
 var part_hp: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 ## 逻辑航道号：只有换道才变，后坐力/浪只改 lane_offset_y
 var lane_index: int = 0
+## 出生道；-1 = 按场景里的初始 y 反推
+@export var start_lane: int = 2
 var is_switching: bool = false
 var lane_offset_y: float = 0.0
 var wave_offset: float = 0.0
@@ -58,6 +62,8 @@ var is_sunk: bool = false
 var respawn_timer: float = 0.0
 ## 由战斗管理器注入的全局配置（找不到时回落到 combat_config 组）
 var config_source: Node = null
+## T-305 破堡演出期间冻结玩家操作
+var _frozen: bool = false
 
 var _lanes: Node
 var _body: Node2D
@@ -82,8 +88,11 @@ func _ready() -> void:
 	if cs != null and cs.shape is RectangleShape2D:
 		body_half_height = (cs.shape as RectangleShape2D).size.y * 0.5
 	if _lanes:
-		# 船底对齐时，位置 y 是船底而不是中心，按"船底 → 航道"反推
-		lane_index = int(_lanes.lane_index_at_bottom_y(global_position.y))
+		if start_lane >= 0:
+			lane_index = int(_lanes.clamp_lane_index(start_lane))
+		else:
+			# 船底对齐时，位置 y 是船底而不是中心，按"船底 → 航道"反推
+			lane_index = int(_lanes.lane_index_at_bottom_y(global_position.y))
 	_sail_overlay = get_node_or_null("Body/SailOverlay") as Sprite2D
 	_hull_overlay = get_node_or_null("Body/HullOverlay") as Sprite2D
 	for p in ["Body/Weapon/Turret0", "Body/Weapon/Turret1"]:
@@ -93,6 +102,8 @@ func _ready() -> void:
 	_refresh_damage_visuals()
 
 func _physics_process(delta: float) -> void:
+	if _frozen:
+		return
 	var speed := move_speed * sail_speed_multiplier()
 	velocity.x = Input.get_axis("move_left", "move_right") * speed
 	velocity.y = 0.0
@@ -149,7 +160,7 @@ func _apply_position_y() -> void:
 		return
 	# 俯视感：下面的航道画在前面，并稍微放大
 	z_index = base_z_index + lane_index * z_step_per_lane
-	var s: float = 1.0 + perspective_scale_per_lane * float(lane_index)
+	var s: float = base_scale * (1.0 + perspective_scale_per_lane * float(lane_index))
 	scale = Vector2(s, s)
 	# 船底贴该海道下方的分道线（方案 B）：整条船从这条线往上"立"起来
 	global_position.y = float(_lanes.lane_bottom_y(lane_index)) + lane_offset_y + wave_offset - _bottom_shift()
@@ -166,6 +177,13 @@ func _bottom_shift() -> float:
 ## 当前逻辑航道号（炮弹跨道判定用）
 func current_lane() -> int:
 	return lane_index
+
+
+## 演出期间冻结（速度清零，不再响应输入）
+func set_frozen(frozen: bool) -> void:
+	_frozen = frozen
+	if frozen:
+		velocity = Vector2.ZERO
 
 # ---------- 部位 ----------
 
