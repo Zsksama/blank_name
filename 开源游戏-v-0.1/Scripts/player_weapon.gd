@@ -14,7 +14,7 @@ signal state_changed
 @export_group("炮台")
 @export var turret_count: int = 2
 @export var angle_min: float = 0.0
-@export var angle_max: float = 90.0
+@export var angle_max: float = 180.0
 @export var angle_speed: float = 120.0
 @export var reload_time: Array[float] = [1.0, 1.0]
 @export var spread_deg: float = 5.0
@@ -96,6 +96,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _ship.controls_locked:
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_1: select_ammo(0)
@@ -109,7 +111,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _update_aim(delta: float) -> void:
 	if _turret_sprites.is_empty():
 		return
-	var target_angle := Ballistics.angle_to_point(_turret_sprites[0].position, get_local_mouse_position())
+	var pivot := _turret_sprites[0].position
+	var aim := get_local_mouse_position()
+	aim.y = minf(aim.y, pivot.y)
+	var target_angle := Ballistics.angle_to_point(pivot, aim)
 	turret_angle = move_toward(turret_angle, clampf(target_angle, angle_min, angle_max), angle_speed * delta)
 	_update_turret_sprites()
 
@@ -125,7 +130,7 @@ func muzzle_global(index: int = 0) -> Vector2:
 
 
 func _shot_velocity(index: int, speed: float) -> Vector2:
-	var angle := turret_angle + _pending_spread[index]
+	var angle := clampf(turret_angle + _pending_spread[index], angle_min, angle_max)
 	return Ballistics.velocity_from_angle(angle, speed).rotated(global_rotation)
 
 
@@ -148,7 +153,7 @@ func ready_turrets() -> Array[int]:
 
 
 func can_fire() -> bool:
-	if _ship == null or not _ship.combat.targetable or _ship.is_switching():
+	if _ship == null or _ship.controls_locked or not _ship.combat.targetable or _ship.is_switching():
 		return false
 	if not _ship.combat.parts.can_fire() or switch_lock > 0.0 or ammo[ammo_selected] <= 0:
 		return false
@@ -208,14 +213,15 @@ func _update_reload_labels() -> void:
 		label.text = "%.1f" % remaining if remaining > 0.0 else "就绪"
 		label.add_theme_color_override("font_color",
 			Color(1.0, 0.72, 0.32) if remaining > 0.0 else Color(0.62, 1.0, 0.66))
-		label.position = _turret_sprites[i].global_position + reload_label_offset - label.size * 0.5
+		var row_offset := Vector2.UP * i * (reload_label_font_size + 5.0)
+		label.position = _turret_sprites[0].global_position + reload_label_offset + row_offset - label.size * 0.5
 
 
 func _update_preview() -> void:
 	if _line == null:
 		return
 	var lanes := get_tree().get_first_node_in_group("battle_lanes") as Lanes
-	_line.visible = (config != null and _ship.combat.targetable and not _ship.is_switching()
+	_line.visible = (config != null and not _ship.controls_locked and _ship.combat.targetable and not _ship.is_switching()
 		and _ship.combat.parts.can_fire() and switch_lock <= 0.0 and not _turret_sprites.is_empty())
 	if not _line.visible:
 		return
@@ -223,7 +229,7 @@ func _update_preview() -> void:
 	var index := 0 if ready.is_empty() else ready[0]
 	var start := muzzle_global(index)
 	var speed: float = config.shell_speed[ammo_selected]
-	var water_y := INF if lanes == null else lanes.lane_bottom_y(_ship.lane_index)
+	var water_y := INF if lanes == null else lanes.to_global(Vector2(0.0, lanes.lane_bottom_y(_ship.lane_index))).y
 	var dt := 1.0 / float(Engine.physics_ticks_per_second)
 	var launch_velocity := _shot_velocity(index, speed)
 	var inputs := [start, launch_velocity, config.gravity, config.drag_k, dt, water_y, preview_max_points]

@@ -16,7 +16,9 @@ extends Resource
 @export var hull_burn_texture: Texture2D
 
 @export_group("航行")
-@export var speed := 70.0
+@export var speed := 18.0
+@export var speed_variance := 6.0
+@export var attack_maneuver_distance := 24.0
 @export var stop_distance := 320.0
 @export var min_gap := 144.0
 @export var can_change_lane := false

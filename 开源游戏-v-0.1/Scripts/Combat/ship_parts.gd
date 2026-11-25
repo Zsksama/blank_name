@@ -16,12 +16,14 @@ const RAM_DAMAGE_MULTIPLIERS := [1.0, 0.5, 0.0]
 var rng := RandomNumberGenerator.new()
 
 var _profile: ShipDamageProfile
+var _max_hp: PackedFloat64Array
 var _hp: PackedFloat64Array
 
 
 func _init(profile: ShipDamageProfile) -> void:
 	_profile = profile
-	_hp = profile.max_hp.duplicate()
+	_max_hp = profile.max_hp.duplicate()
+	_hp = _max_hp.duplicate()
 
 
 func hp(part: Part) -> float:
@@ -29,18 +31,29 @@ func hp(part: Part) -> float:
 
 
 func max_hp(part: Part) -> float:
-	return _profile.max_hp[part]
+	return _max_hp[part]
+
+
+func set_hp(part: Part, amount: float, maximum: float = -1.0) -> void:
+	var old_condition := condition(part)
+	if maximum >= 0.0:
+		_max_hp[part] = maximum
+	var bounded := clampf(amount, 0.0, max_hp(part))
+	var changed := bounded != _hp[part]
+	_hp[part] = bounded
+	var new_condition := condition(part)
+	if changed or new_condition != old_condition:
+		part_changed.emit(part, bounded, new_condition)
 
 
 func repair_toward(part: Part, amount: float, cap: float) -> void:
 	if amount <= 0.0 or _hp[part] >= cap:
 		return
-	_hp[part] = minf(cap, _hp[part] + amount)
-	part_changed.emit(part, _hp[part], condition(part))
+	set_hp(part, minf(cap, _hp[part] + amount))
 
 
 func condition(part: Part) -> Condition:
-	var ratio := _hp[part] / maxf(_profile.max_hp[part], 0.001)
+	var ratio := _hp[part] / maxf(_max_hp[part], 0.001)
 	if ratio <= DESTROYED_THRESHOLD:
 		return Condition.DESTROYED
 	if ratio <= DAMAGE_THRESHOLD:

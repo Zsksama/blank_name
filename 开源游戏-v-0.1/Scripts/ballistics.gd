@@ -10,7 +10,7 @@ static func velocity_from_angle(angle_deg: float, speed: float) -> Vector2:
 
 
 static func angle_to_point(from: Vector2, to: Vector2) -> float:
-	return rad_to_deg(atan2(-(to.y - from.y), to.x - from.x))
+	return rad_to_deg(atan2(from.y - to.y, to.x - from.x))
 
 
 static func simulate(

@@ -12,12 +12,15 @@ var _battle_start: Dictionary
 var _ledger: Array[Dictionary] = []
 
 
-func _init(difficulty: String = "normal", first_battle_id: int = 1) -> void:
+func _init(difficulty: String = "normal", first_battle_id: int = 1, opening_ammo: Dictionary = {}) -> void:
 	first_battle_id = maxi(1, first_battle_id)
 	if not Rules.DIFFICULTIES.has(difficulty):
 		difficulty = "normal"
 	var settings: Dictionary = Rules.DIFFICULTIES[difficulty]
 	_state = Rules.INITIAL_STOCK.duplicate(true)
+	for kind in _state.ammo:
+		if opening_ammo.has(kind):
+			_state.ammo[kind] = maxi(0, int(opening_ammo[kind]))
 	_state.merge({
 		"battle_id": first_battle_id - 1, "day": 0, "difficulty": difficulty,
 		"light": settings.light, "defeats_left": settings.defeats_left,

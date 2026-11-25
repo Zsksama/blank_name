@@ -1,7 +1,7 @@
 extends RefCounted
 
 const EVENT_IDS := ["regular", "upgrade", "repair", "forge"]
-const AMMO_NAMES := {"round": "实心弹", "chain": "链弹", "grape": "霰弹"}
+const AMMO_NAMES := {"round": "实心弹", "chain": "破帆弹", "grape": "爆炸弹"}
 const PART_NAMES := {"hull": "舰体", "rigging": "帆索", "guns": "火炮"}
 const EVENTS := {
 	"regular": {
@@ -46,7 +46,7 @@ const OPTIONS := {
 			"asset": "ship", "costs": {"research": 4},
 		},
 		{
-			"id": "upgrade_fort", "title": "升级碉堡", "description": "重砌炮眼与外墙，提高碉堡耐久上限。",
+			"id": "upgrade_fort", "title": "升级碉堡", "description": "增设炮位，重砌外墙，提高碉堡耐久上限。",
 			"asset": "fort", "costs": {"research": 5},
 		},
 		{"id": "skip", "title": "暂缓升级", "description": "留存研究点，继续使用现有图样。"},
@@ -68,11 +68,11 @@ const OPTIONS := {
 			"yield": {"ammo": {"round": 8}}, "costs": {"materials": 4},
 		},
 		{
-			"id": "forge_chain", "title": "铸链弹", "description": "以铁链连接弹头，瞄准敌帆与桅索。",
+			"id": "forge_chain", "title": "铸破帆弹", "description": "以铁链连接弹头，瞄准敌帆与桅索。",
 			"yield": {"ammo": {"chain": 5}}, "costs": {"materials": 6},
 		},
 		{
-			"id": "forge_grape", "title": "铸霰弹", "description": "扎束小铁丸，留供近处交锋。",
+			"id": "forge_grape", "title": "铸爆炸弹", "description": "备好能在命中或落水时爆炸的炮弹。",
 			"yield": {"ammo": {"grape": 5}}, "costs": {"materials": 8},
 		},
 		{"id": "skip", "title": "暂缓铸弹", "description": "封炉存料，留待下一次铸造。"},

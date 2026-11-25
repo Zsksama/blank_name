@@ -45,6 +45,7 @@ var drag_k := 0.0
 var pierce_left := 0
 var pierce_damage_falloff := 0.6
 var explode_radius := 0.0
+var explode_push_distance := 0.0
 var explosion_owner: ShipCombat
 
 var _puff_timer := 0.0
@@ -176,12 +177,15 @@ func _resolve_hits(from: Vector2, to: Vector2) -> bool:
 func _explode(point: Vector2) -> void:
 	if explode_radius <= 0.0 or lanes == null:
 		return
+	lanes.blast_at(lane_index, point, explode_radius)
 	var targets := lanes.targets_in_lane(lane_index, team)
 	if is_instance_valid(explosion_owner) and explosion_owner.lane_index == lane_index and explosion_owner.targetable:
 		targets.append(explosion_owner)
+	var centered_direction := 1.0
 	for ship in targets:
 		var bounds := ship.hitbox_bounds()
-		if point.distance_squared_to(point.clamp(bounds.position, bounds.end)) > explode_radius * explode_radius:
+		var hull_distance := point.distance_to(point.clamp(bounds.position, bounds.end))
+		if hull_distance > explode_radius:
 			continue
 		for part in BLAST_PARTS:
 			var box := ship.hitbox(part)
@@ -189,6 +193,12 @@ func _explode(point: Vector2) -> void:
 			if distance <= explode_radius:
 				var falloff := lerpf(1.0, 0.5, distance / explode_radius)
 				ship.receive_hit(part, ammo, damage * falloff)
+		if ship.targetable:
+			var direction := signf(ship.global_position.x - point.x)
+			if is_zero_approx(direction):
+				direction = centered_direction
+				centered_direction = -centered_direction
+			ship.blast_pushed.emit(direction * explode_push_distance * (1.0 - hull_distance / explode_radius))
 
 
 ## 有命中时返回进入矩形的步进比例，无交集时返回 -1。

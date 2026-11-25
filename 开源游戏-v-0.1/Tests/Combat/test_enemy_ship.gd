@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_test_template_and_occupancy()
+	_test_template_and_overlap()
 	_test_targets_and_recoil()
 	_test_damage_and_conduction()
 	_test_swept_hits()
@@ -24,52 +24,48 @@ func _run() -> void:
 	quit(0 if _failures == 0 else 1)
 
 
-func _test_template_and_occupancy() -> void:
+func _test_template_and_overlap() -> void:
 	var battle = _make_battle()
 	var player: PlayerShip = battle.get_node("PlayerShip")
-	player.position.x = 1250.0
-	_check(battle.spawn_enemy(player.current_lane()) == null, "An occupied spawn also checks the player")
-	player.position.x = 420.0
 
 	var ships: Array[EnemyShip] = []
+	var speeds: Array[float] = []
 	for index in range(5):
 		var ship: EnemyShip = battle.spawn_enemy(1)
-		_check(ship != null, "The spawn recovers after space opens for ship %d" % index)
+		_check(ship != null, "Enemy %d can spawn in an occupied lane" % index)
 		if ship == null:
 			battle.free()
 			return
 		ships.append(ship)
-		_check(battle.spawn_enemy(1) == null, "An occupied spawn waits without creating a second ship")
-		for tick in range(12):
-			battle._physics_process(0.2)
+		speeds.append(ship._speed())
 
-	var spaced := true
-	for tick in range(90):
-		battle._physics_process(0.2)
-		for index in range(1, ships.size()):
-			spaced = spaced and ships[index].position.x - ships[index - 1].position.x >= 143.99
+	for tick in range(560):
+		battle._physics_process(0.1)
 
 	_check(ships[0].config.id == &"E-01", "The normal spawn entry loads the E-01 template")
-	_check(spaced, "Five same-lane ships keep 144 px even when the first ship stops")
-	_close(ships[0].position.x, 380.0, "The leader stops 320 px from the fortress front")
-	_close(ships[1].position.x, 524.0, "The follower stops at the leader's minimum gap")
+	_check(float(speeds.min()) >= 18.0 and float(speeds.max()) <= player.move_speed and speeds.min() != speeds.max(),
+		"Each ship has its own speed variation and stays below the player's cruising speed")
+	for ship in ships:
+		_check(ship.position.x >= 379.99 and ship.position.x <= 404.01,
+			"Every enemy can reach the fortress and maneuver in the shared stopping area")
 	_close(battle.fortress_hp, 400.0, "Advancing and reaching the stop line do not damage the fortress")
 	_check(not ships[0].try_change_lane(0), "E-01 disables explicit lane changes by default")
 
 	player.position.x = 380.0
-	_check(not player.try_change_lane(1) and player.lane_change_fail_reason == "有人",
-		"The player cannot enter an occupied lane")
+	_check(player.try_change_lane(1) and player.lane_change_fail_reason.is_empty(),
+		"The player can enter an occupied lane")
 
 	var alternate := ENEMY.duplicate() as EnemyShipConfig
 	alternate.speed = 105.0
 	alternate.can_change_lane = true
 	battle.enemy_config = alternate
 	var faster: EnemyShip = battle.spawn_enemy(0)
-	faster.position.x = 700.0
+	faster.position.x = 450.0
 	_check(not faster.try_change_lane(1) and faster.lane_change_fail_reason == "有人",
 		"An enabled enemy lane change reports occupied space")
+	faster.position.x = 700.0
 	battle._physics_process(0.5)
-	_close(faster.position.x, 647.5, "Spawned movement reads the alternate resource's speed")
+	_close(faster.position.x, 687.5, "The alternate resource is also bounded by the player's speed")
 	_check(faster.try_change_lane(3) and faster.lane_index == 3,
 		"The same enemy scene can accept an open lane with an alternate template")
 	battle.free()
@@ -122,7 +118,8 @@ func _test_targets_and_recoil() -> void:
 	_check(_shots(battle).size() == 1, "A new target cannot bypass the full reload")
 	battle._physics_process(0.12)
 	_check(_shots(battle).size() == 2, "The enemy fires at the fortress when both timers clear")
-	_close(enemy.position.x, 380.0, "Attacking the fortress continues only as far as the stop line")
+	_check(enemy.position.x >= 379.99 and enemy.position.x <= 404.01,
+		"The attacker reaches the stop line and stays within the configured maneuver area")
 	battle.free()
 
 	battle = _make_battle()
@@ -282,12 +279,12 @@ func _test_retreat_and_sinking() -> void:
 	battle.enemy_retreated.connect(func(_ship: EnemyShip): events.retreated += 1)
 	left.set_morale(1, 1)
 	battle._physics_process(0.1)
-	_check(left.action == EnemyShip.Action.FLEE and left.position.x == 1186.0 and blocker.position.x == 1330.0,
-		"A retreating ship turns without crossing its same-lane blocker")
+	_check(left.action == EnemyShip.Action.FLEE and left.position.x > 1186.0 and blocker.position.x < 1330.0,
+		"Retreating and advancing ships can move independently in the same lane")
 
 	var fleeing: EnemyShip = battle.spawn_enemy(3)
 	fleeing.set_morale(1, 1)
-	battle._physics_process(0.2)
+	battle._physics_process(0.6)
 	_check(fleeing.action == EnemyShip.Action.FLEE and not fleeing.combat.targetable and events.retreated == 1,
 		"Retreat emits its own event once when the ship exits")
 	_check(battle.kills == 0 and events.sunk == 0, "Retreat does not count as a kill")
@@ -374,11 +371,11 @@ func _test_fortress_and_end_flow() -> void:
 		shell = battle.launch_projectile(Vector2(130.0, y), Vector2(-1000, 0), lane, ShipCombat.Team.ENEMY, 8.0)
 		shell._physics_process(0.1)
 	_close(battle.fortress_hp, 0.0, "Confirmed enemy impacts in different lanes share the same fortress HP")
-	_check(battle.is_over and battle.get_node("HUD/Banner").text == "碉堡失守……",
+	_check(battle.is_over and battle.get_node("HUD/Banner").text == "堡已破 · 乡兵击退了倭寇",
 		"Zero shared fortress HP triggers defeat")
 	await create_timer(0.15).timeout
-	_check(current_scene != null and current_scene.scene_file_path.ends_with("management_demo.tscn"),
-		"Defeat enters the existing management demo")
+	_check(current_scene != null and current_scene.scene_file_path.ends_with("/management.tscn"),
+		"A breach without a surviving enemy still settles into management")
 	if current_scene != null:
 		var finished := current_scene
 		current_scene = null
@@ -388,10 +385,12 @@ func _test_fortress_and_end_flow() -> void:
 func _make_battle():
 	var battle = BATTLE.instantiate()
 	battle.first_spawn_delay = 9999.0
+	battle.gate_launch_time = 0.0
 	battle.turret_fire_range = 0.0
 	root.add_child(battle)
 	battle.set_physics_process(false)
 	battle.get_node("PlayerShip").set_physics_process(false)
+	battle.get_node("PlayerShip").position.x = 420.0
 	return battle
 
 

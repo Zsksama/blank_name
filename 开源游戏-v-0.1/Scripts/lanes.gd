@@ -26,6 +26,14 @@ class WaterSplash extends Node2D:
 		draw_multiline(strokes, Color(0.91, 0.97, 1.0, 0.95), 2.0)
 
 
+class Blast extends Node2D:
+	var radius: float
+
+	func _draw() -> void:
+		draw_circle(Vector2.ZERO, radius, Color(0.98, 0.48, 0.18, 0.25))
+		draw_arc(Vector2.ZERO, radius, 0.0, TAU, 40, Color(1.0, 0.79, 0.4, 0.85), 3.0, true)
+
+
 var _water_bands: Array[ColorRect] = []
 var _ships: Array[ShipCombat] = []
 
@@ -93,6 +101,19 @@ func splash_at(lane: int, x: float) -> void:
 	tween.chain().tween_callback(splash.queue_free)
 
 
+func blast_at(lane: int, point: Vector2, radius: float) -> void:
+	var blast := Blast.new()
+	blast.radius = radius
+	blast.position = to_local(point)
+	blast.z_index = content_z(lane)
+	blast.scale = Vector2.ONE * 0.15
+	add_child(blast)
+	var tween := blast.create_tween().set_parallel()
+	tween.tween_property(blast, "scale", Vector2.ONE, 0.28)
+	tween.tween_property(blast, "modulate:a", 0.0, 0.28).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	tween.chain().tween_callback(blast.queue_free)
+
+
 func content_z(index: int) -> int:
 	return FIRST_LANE_Z + clamp_lane_index(index) * LANE_Z_STEP + 1
 
@@ -153,27 +174,6 @@ func has_space(
 		if absf(other.global_position.x - x) < maxf(separation, margin):
 			return false
 	return true
-
-
-## 同道船只的逻辑中心作为占位锚点，后坐和贴图变化不影响这里。
-func limit_ship_x(ship: ShipCombat, proposed_x: float) -> float:
-	var x := ship.global_position.x
-	var limited := proposed_x
-	for other in _ships:
-		if other == ship:
-			continue
-		var shares_lane := other.occupies_lane(ship.lane_index)
-		if not shares_lane and ship.previous_lane >= 0:
-			shares_lane = other.occupies_lane(ship.previous_lane)
-		if not shares_lane:
-			continue
-		var other_x := other.global_position.x
-		var separation := _ship_spacing(ship.size.x, ship.min_gap, other)
-		if proposed_x < x and other_x <= x:
-			limited = maxf(limited, minf(x, other_x + separation))
-		elif proposed_x > x and other_x >= x:
-			limited = minf(limited, maxf(x, other_x - separation))
-	return limited
 
 
 func _ship_spacing(width: float, min_gap: float, other: ShipCombat) -> float:

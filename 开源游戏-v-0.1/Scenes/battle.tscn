@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://Scripts/Combat/combat_config.gd" id="8_config"]
 [ext_resource type="Texture2D" uid="uid://c6752u1otieqv" path="res://Assets/Art/UI/crosshair.png" id="9_cross"]
 [ext_resource type="Script" uid="uid://cggt6idsp3k0g" path="res://Scripts/ui/reload_ring.gd" id="10_ring"]
+[ext_resource type="PackedScene" path="res://Scenes/fortress.tscn" id="11_fort"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_v"]
 size = Vector2(8, 720)
@@ -32,8 +33,7 @@ script = ExtResource("5_lanes")
 [node name="CombatConfig" type="Node" parent="." unique_id=1637146987]
 script = ExtResource("8_config")
 
-[node name="Fortress" type="Node2D" parent="." unique_id=380633470]
-z_index = 50
+[node name="Fortress" parent="." unique_id=380633470 instance=ExtResource("11_fort")]
 
 [node name="Enemies" type="Node2D" parent="." unique_id=1572531849]
 
@@ -88,6 +88,15 @@ theme_override_colors/font_color = Color(0.93, 0.84, 0.5, 1)
 theme_override_font_sizes/font_size = 46
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="Alert" type="Label" parent="HUD"]
+offset_left = 240.0
+offset_top = 94.0
+offset_right = 1040.0
+offset_bottom = 132.0
+theme_override_colors/font_color = Color(1, 0.76, 0.47, 1)
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
 
 [node name="ReloadRing" type="Node2D" parent="HUD" unique_id=795453989]
 position = Vector2(52, 101)

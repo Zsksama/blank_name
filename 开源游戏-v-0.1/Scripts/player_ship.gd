@@ -38,6 +38,7 @@ var lane_index: int:
 var lane_change_fail_reason := ""
 var lane_offset_y := 0.0
 var wave_offset := 0.0
+var controls_locked := false
 var _lanes: Lanes
 var _switch_remaining := 0.0
 var _switch_duration := 0.0
@@ -45,6 +46,8 @@ var _switch_from := 0.0
 var _recoil := 0.0
 var _recoil_start := 0.0
 var _recoil_elapsed := 0.0
+var _gate_tween: Tween
+var _sink_tween: Tween
 
 @onready var combat: ShipCombat = $Combat
 @onready var _weapon: PlayerWeapon = $Combat/Weapon
@@ -72,6 +75,8 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if controls_locked:
+		return
 	_update_recoil(delta)
 	_update_repair(delta)
 	var speed := move_speed * combat.parts.speed_multiplier()
@@ -92,21 +97,16 @@ func _physics_process(delta: float) -> void:
 		if is_zero_approx(_switch_remaining):
 			combat.previous_lane = -1
 	if not is_switching():
-		var next_x := global_position.x + Input.get_axis("move_left", "move_right") * speed * delta
-		var allowed_x := _lanes.limit_ship_x(combat, next_x)
-		velocity.x = (allowed_x - global_position.x) / delta
+		velocity.x = Input.get_axis("move_left", "move_right") * speed
 		move_and_slide()
 	_apply_lane_pose()
 
 
 func try_change_lane(index: int) -> bool:
 	lane_change_fail_reason = ""
-	if _lanes == null or not combat.targetable or is_switching():
+	if _lanes == null or controls_locked or not combat.targetable or is_switching():
 		return false
 	if index != _lanes.clamp_lane_index(index) or index == lane_index:
-		return false
-	if not _lanes.has_space(index, global_position.x, combat.size.x, combat.min_gap, combat):
-		lane_change_fail_reason = "有人"
 		return false
 	var multiplier := combat.parts.lane_switch_multiplier()
 	if is_inf(multiplier):
@@ -135,9 +135,7 @@ func muzzle_position(_heading: float = 1.0) -> Vector2:
 
 func add_recoil(heading_x: float, amount: float = 1.0) -> void:
 	var next := minf(recoil_max, _recoil + amount)
-	var proposed_x := global_position.x - heading_x * recoil_impulse * (next - _recoil)
-	var allowed_x := proposed_x if _lanes == null else _lanes.limit_ship_x(combat, proposed_x)
-	move_and_collide(Vector2(allowed_x - global_position.x, 0.0))
+	move_and_collide(Vector2(-heading_x * recoil_impulse * (next - _recoil), 0.0))
 	_recoil_start = next
 	_recoil = next
 	_recoil_elapsed = 0.0
@@ -179,8 +177,58 @@ func _update_repair(delta: float) -> void:
 
 
 func _on_sunk() -> void:
-	set_physics_process(false)
+	lock_controls()
 	$CollisionShape2D.set_deferred("disabled", true)
 	_weapon.hide()
-	combat.play_sinking()
+	_sink_tween = combat.play_sinking()
 	sunk.emit(self)
+
+
+func lock_controls() -> void:
+	controls_locked = true
+	velocity = Vector2.ZERO
+	if _gate_tween != null:
+		_gate_tween.kill()
+	_weapon.get_node("Preview").hide()
+
+
+func sail_from_gate(lane: int, inside_x: float, exit_x: float, duration: float) -> void:
+	lock_controls()
+	combat.targetable = false
+	$CollisionShape2D.set_deferred("disabled", true)
+	if _sink_tween != null:
+		_sink_tween.kill()
+	if combat.parts.is_sunk():
+		for part in ShipParts.Part.values():
+			combat.parts.set_hp(part, combat.parts.max_hp(part))
+		combat.reset_sinking_pose()
+	_weapon.show()
+	_set_gate_lane(lane)
+	global_position.x = inside_x
+	if duration > 0.0:
+		_gate_tween = create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+		_gate_tween.tween_property(self, "global_position:x", exit_x, duration)
+		await _gate_tween.finished
+	else:
+		global_position.x = exit_x
+	combat.targetable = true
+	controls_locked = false
+	$CollisionShape2D.set_deferred("disabled", false)
+
+
+func sail_back_to_gate(lane: int, inside_x: float, duration: float) -> void:
+	combat.targetable = false
+	if duration <= 0.0:
+		return
+	_gate_tween = create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	_gate_tween.tween_property(self, "global_position:y", _lanes.lane_bottom_y(lane), duration * 0.35)
+	_gate_tween.tween_callback(_set_gate_lane.bind(lane))
+	_gate_tween.tween_property(self, "global_position:x", inside_x, duration * 0.65)
+
+
+func _set_gate_lane(lane: int) -> void:
+	combat.previous_lane = -1
+	combat.lane_index = lane
+	_switch_remaining = 0.0
+	_recoil = 0.0
+	_apply_lane_pose()

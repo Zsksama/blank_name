@@ -14,12 +14,13 @@ const SCALAR_LABELS := {
 	"ship_level": "船级", "fort_level": "堡级", "fort_hp": "碉堡耐久", "defeats_left": "余败场",
 }
 const STATUS_CELLS := [
-	["materials", "材料", 0.86], ["round", "实心弹", 0.86], ["chain", "链弹", 0.86],
-	["grape", "霰弹", 0.86], ["research", "研究点", 0.91], ["light", "灯火", 1.42],
+	["materials", "材料", 0.86], ["round", Rules.AMMO_NAMES.round, 0.86], ["chain", Rules.AMMO_NAMES.chain, 0.86],
+	["grape", Rules.AMMO_NAMES.grape, 0.86], ["research", "研究点", 0.91], ["light", "灯火", 1.42],
 	["day", "日历", 0.99], ["ship", "战船", 2.09], ["fort", "碉堡", 1.49],
 ]
 
 var _session: Session
+var _battle_scene: PackedScene
 var _day := -1
 var _event_index := 0
 var _ledger_index := -1
@@ -61,7 +62,8 @@ func _ready() -> void:
 	_refresh()
 
 
-func bind_session(session: Session) -> void:
+func bind_session(session: Session, battle_scene: PackedScene = null) -> void:
+	_battle_scene = battle_scene
 	if _session == session:
 		return
 	if _session != null:
@@ -314,6 +316,10 @@ func _depart() -> void:
 	var snapshot := _session.start_battle()
 	if not snapshot.is_empty():
 		battle_started.emit(snapshot)
+		if _battle_scene != null:
+			var battle := _battle_scene.instantiate()
+			battle.management_session = _session
+			get_tree().change_scene_to_node(battle)
 
 
 func _label(content: String, variant: StringName) -> Label:

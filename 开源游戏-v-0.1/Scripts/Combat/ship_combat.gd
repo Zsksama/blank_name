@@ -2,6 +2,7 @@ class_name ShipCombat
 extends Node2D
 
 signal sunk
+signal blast_pushed(distance: float)
 
 enum Team { ALLY, ENEMY }
 
@@ -215,3 +216,9 @@ func play_sinking() -> Tween:
 	sink.tween_property(_sprite, "rotation", _heading * 0.24, 0.50)
 	sink.tween_property(_sprite, "modulate:a", 0.0, 0.50)
 	return sink
+
+
+func reset_sinking_pose() -> void:
+	_sprite.position = Vector2.ZERO
+	_sprite.rotation = 0.0
+	_sprite.modulate = _base_tint

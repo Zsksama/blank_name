@@ -44,6 +44,8 @@ func _reload_time() -> Array:
 func _draw() -> void:
 	var left: Array = _reload_left()
 	var total: Array = _reload_time()
+	var switch_left: float = _weapon.switch_lock if _weapon != null else 0.0
+	var switching := switch_left > 0.0
 	var n: int = maxi(left.size(), 1)
 	var seg: float = TAU / float(n)
 	var gap: float = deg_to_rad(gap_deg)
@@ -57,7 +59,11 @@ func _draw() -> void:
 		var remain: float = float(left[i]) if i < left.size() else 0.0
 		var full: float = float(total[i]) if i < total.size() else 1.0
 		var progress: float = 1.0 if full <= 0.0 else clampf(1.0 - remain / full, 0.0, 1.0)
-		if remain <= 0.0:
+		if switching:
+			progress = clampf(1.0 - switch_left / _weapon.switch_ammo_delay, 0.0, 1.0)
+			if progress > 0.01:
+				draw_arc(Vector2.ZERO, radius, start + gap, start + gap + (seg - 2.0 * gap) * progress, 24, color_loading, thickness, true)
+		elif remain <= 0.0:
 			ready_count += 1
 			draw_arc(Vector2.ZERO, radius, start + gap, end - gap, 24, color_ready, thickness, true)
 		elif show_partial and progress > 0.01:
@@ -65,6 +71,7 @@ func _draw() -> void:
 
 	# 中心「可开炮数 / 总数」
 	var font: Font = ThemeDB.fallback_font
-	var text: String = "%d/%d" % [ready_count, n]
-	var size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, center_font_size)
-	draw_string(font, Vector2(-size.x * 0.5, size.y * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, -1, center_font_size, center_color)
+	var text: String = "切换弹药" if switching else "%d/%d" % [ready_count, n]
+	var font_size := 12 if switching else center_font_size
+	var size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	draw_string(font, Vector2(-size.x * 0.5, size.y * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, center_color)

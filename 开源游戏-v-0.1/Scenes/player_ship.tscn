@@ -15,7 +15,7 @@ script = ExtResource("4_profile")
 max_hp = PackedFloat64Array(60, 100, 60, 40, 40)
 sail_box = Rect2(-0.220588, -0.365979, 0.558824, 0.28866)
 hull_box = Rect2(-0.441176, 0.175258, 0.882353, 0.28866)
-cannon_box = Rect2(-0.429739, -0.092784, 0.323529, 0.206186)
+cannon_box = Rect2(0.10621, -0.092784, 0.323529, 0.206186)
 
 [node name="PlayerShip" type="CharacterBody2D" unique_id=1814595808]
 position = Vector2(420, 489.6)
