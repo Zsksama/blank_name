@@ -1,3 +1,8 @@
+# 根目录只跟踪 Git 忽略规则和 Godot 游戏项目。
+/*
+!/.gitignore
+!/开源游戏-v-0.1/
+
 # Operating system metadata
 .DS_Store
 ._*
@@ -13,3 +18,6 @@ Desktop.ini
 # Python bytecode from repository scripts
 __pycache__/
 *.pyc
+
+#本地配置文件等
+/.local
