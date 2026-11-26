@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://kqn27w80n8mt"]
+
+[ext_resource type="Script" uid="uid://cd1o8hgofucwi" path="res://Scripts/player_ship.gd" id="1_ship"]
+[ext_resource type="Texture2D" uid="uid://cy30hptdhtfub" path="res://Assets/Art/Characters/ship_player.png" id="2_art"]
+[ext_resource type="Script" uid="uid://cdw6du3eyq3fm" path="res://Scripts/Combat/ship_combat.gd" id="3_combat"]
+[ext_resource type="Script" uid="uid://cmqsf5dmcflaw" path="res://Scripts/Combat/ship_damage_profile.gd" id="4_profile"]
+[ext_resource type="Script" uid="uid://bxyievayxtg6n" path="res://Scripts/player_weapon.gd" id="5_weapon"]
+[ext_resource type="Texture2D" uid="uid://cwsrgruq2smfi" path="res://Assets/Art/Characters/turret_ship.png" id="6_turret"]
+[ext_resource type="Texture2D" uid="uid://sedjcxd5fyap" path="res://Assets/Art/Effects/sail_torn_large.png" id="7_torn"]
+[ext_resource type="Texture2D" uid="uid://bx86fe1eglgbp" path="res://Assets/Art/Effects/sail_ruined_large.png" id="8_ruined"]
+[ext_resource type="Texture2D" uid="uid://chlhcuhm4sc03" path="res://Assets/Art/Effects/hull_burn_large.png" id="9_burn"]
+
+[sub_resource type="Resource" id="Resource_player_parts"]
+script = ExtResource("4_profile")
+max_hp = PackedFloat64Array(60, 100, 60, 40, 40)
+sail_box = Rect2(-0.220588, -0.365979, 0.558824, 0.28866)
+hull_box = Rect2(-0.441176, 0.175258, 0.882353, 0.28866)
+cannon_box = Rect2(0.10621, -0.092784, 0.323529, 0.206186)
+
+[node name="PlayerShip" type="CharacterBody2D" unique_id=1814595808]
+position = Vector2(420, 489.6)
+script = ExtResource("1_ship")
+move_speed = 1000.0
+damage_profile = SubResource("Resource_player_parts")
+sail_torn_texture = ExtResource("7_torn")
+sail_ruined_texture = ExtResource("8_ruined")
+hull_burn_texture = ExtResource("9_burn")
+
+[node name="Combat" type="Node2D" parent="." unique_id=108452694]
+script = ExtResource("3_combat")
+
+[node name="Sprite2D" type="Sprite2D" parent="Combat" unique_id=536524199]
+texture = ExtResource("2_art")
+
+[node name="Weapon" type="Node2D" parent="Combat" unique_id=1151392929]
+script = ExtResource("5_weapon")
+show_reload_labels = false
+
+[node name="Turret0" type="Sprite2D" parent="Combat/Weapon" unique_id=1702945584]
+texture = ExtResource("6_turret")
+
+[node name="Turret1" type="Sprite2D" parent="Combat/Weapon" unique_id=1316642843]
+texture = ExtResource("6_turret")
+
+[node name="Preview" type="Line2D" parent="Combat/Weapon" unique_id=1210144724]
+top_level = true
+z_as_relative = false
+width = 2.0
+default_color = Color(0.98, 0.9, 0.6, 0.5)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1060619921]
