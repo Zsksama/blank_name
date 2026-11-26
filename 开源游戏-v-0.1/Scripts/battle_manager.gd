@@ -270,7 +270,7 @@ func _launch_player_from_gate() -> void:
 func _on_player_sunk(player: PlayerShip) -> void:
 	lamp_value = maxi(0, lamp_value - player_sunk_light_loss)
 	_refresh_status()
-	await get_tree().create_timer(player_respawn_delay, false, true).timeout
+	await get_tree().create_timer(player_respawn_delay, false, true, true).timeout
 	if not is_over and player.combat.parts.is_sunk():
 		_launch_player_from_gate()
 
@@ -298,7 +298,7 @@ func _start_gate_breach() -> void:
 		return
 	var sail := closest.sail_into_gate(water_gate_lane, entrance, entrance.x - 62.0, gate_breach_time)
 	sail.finished.connect(_finish.bind(false))
-	await get_tree().create_timer(gate_breach_time + 0.25, false, true).timeout
+	await get_tree().create_timer(gate_breach_time + 0.25, false, true, true).timeout
 	_finish(false)
 
 

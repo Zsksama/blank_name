@@ -36,8 +36,8 @@ signal morale_changed(delta: float)
 
 @export_group("T-403 接舷过程")
 @export_range(0.01, 1.0, 0.01) var boarding_time_scale := 0.03
-@export var power_player := 12.0
-@export var power_enemy := 10.0
+@export var power_player := 6.0
+@export var power_enemy := 5.0
 ## 其它部位每秒掉「舰体伤害 × 该比例」。
 @export_range(0.0, 1.0, 0.01) var splash_ratio := 0.3
 
@@ -48,7 +48,7 @@ signal morale_changed(delta: float)
 ## 按住空格时的自动重复间隔（秒）。
 @export var qte_decay := 0.01
 @export var qte_decay_interval := 0.3
-@export var flee_hold := 1.5
+@export var flee_hold := 1.0
 
 @export_group("T-405 结局与气焰")
 @export var flee_back_distance := 200.0
@@ -84,6 +84,7 @@ var _snap_player_ram := 0.0
 var _snap_enemy_hull := 0.0
 var _snap_enemy_ram := 0.0
 var _snap_lane_overlap := false
+var _hp: Label
 var _flee_left := 0.0
 var _second_accum := 0.0
 var _cooldowns := {}
@@ -212,6 +213,7 @@ func _enter(enemy: EnemyShip, relative_speed: float, lane_overlap: bool) -> void
 	_player.combat.damage_float_enabled = false
 	enemy.combat.damage_float_enabled = false
 	_show_ui(true)
+	_update_hp()
 	_show_big("撞击！")
 	_focus_camera(true)
 	if log_boarding:
@@ -315,6 +317,7 @@ func _tick_second() -> void:
 	_damage_player(enemy_out)
 	_damage_enemy(player_out)
 	_flash_damage(player_out, enemy_out)
+	_update_hp()
 	if log_boarding:
 		print("[接舷] 每秒 我舰体=%.1f 敌舰体=%.1f qte=%.2f 灯火x%.2f 气焰x%.2f" % [
 			_player.combat.parts.hp(ShipParts.Part.HULL),
@@ -445,14 +448,30 @@ func _build_ui() -> void:
 	_big.visible = false
 	_layer.add_child(_big)
 
+	_hp = Label.new()
+	_hp.name = "HpLine"
+	_hp.add_theme_font_size_override("font_size", 26)
+	_hp.add_theme_color_override("font_color", Color(0.95, 0.96, 1.0))
+	_hp.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.03, 0.9))
+	_hp.add_theme_constant_override("outline_size", 6)
+	_hp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hp.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_hp.position = Vector2(-640, 34)
+	_hp.size = Vector2(1280, 36)
+	_hp.visible = false
+	_layer.add_child(_hp)
+
 
 func _show_ui(show_it: bool) -> void:
 	_layer.visible = show_it
 	_set_hud_visible(not show_it)
 	if show_it:
 		_update_prompt()
+		_update_hp()
 	else:
 		_prompt.visible = false
+		if _hp != null:
+			_hp.visible = false
 
 
 func _set_hud_visible(show_it: bool) -> void:
@@ -473,6 +492,23 @@ func _update_prompt() -> void:
 	_prompt.visible = true
 	var hold := "" if _flee_left <= 0.0 else "（撤退 %.1f/%.1f 秒）" % [_flee_left, flee_hold]
 	_prompt.text = "接舷战！连按空格提升倍率 ×%.2f    长按 T 撤退%s" % [_qte, hold]
+
+
+## 接舷中显示双方舰体血量（策划 11-26 反馈）。
+func _update_hp() -> void:
+	if _hp == null or _player == null:
+		return
+	if not active and _enemy == null:
+		return
+	var player_hull: float = _player.combat.parts.hp(ShipParts.Part.HULL)
+	var player_max: float = maxf(_player.combat.parts.max_hp(ShipParts.Part.HULL), 0.001)
+	var line := "我舰 舰体 %.0f / %.0f" % [maxf(player_hull, 0.0), player_max]
+	if _enemy != null and is_instance_valid(_enemy):
+		var enemy_hull: float = _enemy.combat.parts.hp(ShipParts.Part.HULL)
+		var enemy_max: float = maxf(_enemy.combat.parts.max_hp(ShipParts.Part.HULL), 0.001)
+		line += "        敌舰 舰体 %.0f / %.0f" % [maxf(enemy_hull, 0.0), enemy_max]
+	_hp.text = line
+	_hp.visible = true
 
 
 func _show_big(text: String) -> void:
