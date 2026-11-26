@@ -1,0 +1,218 @@
+# 休息经营 MVP 开发记录
+
+依据实施计划和开发约定。在 `operation_dev` 上新增独立经营场景和模拟战斗入口。Godot AI MCP 和桌面验收使用项目副本，避免把验证产生的缓存带进工作区。
+
+## 实现步骤
+
+| 步骤 | 模块 | 完成条件 | 状态 |
+| --- | --- | --- | --- |
+| 1 | 战斗接口与经营会话 | `enter_rest(BattleResult)` 接收当前战果。鸣金返回 `BattleStart`，重打复用快照。重复、过期、乱序或无效输入不改变状态。 | 已实现并通过无头验收 |
+| 2 | 事件与结算规则 | 草稿可回改，鸣金校验整单资金并锁定。下次经营依序结算四类事件，按最终灯火发放产出，记账并推进日历。 | 已实现并通过无头验收 |
+| 3 | 经营界面 | 资源栏、罗盘、事件箭头、剧情选项、预览、账本和鸣金接入同一个会话。拖动与点击均能改选。 | 已实现并通过桌面验收 |
+| 4 | 独立联调入口 | 模拟战斗供经营侧跑两轮循环。可查看开战快照，模拟胜败和重打。 | 已实现并通过模拟联调 |
+| 5 | 验收与交接 | 运行 Godot 无头验收、Godot AI MCP 和桌面交互检查。记录接口、可复现命令与实测结果。 | 已完成，实际战斗接入待联调 |
+| 6 | 罗盘回场修正 | 新一轮尚未选择时仍绘制灰色指针，指向当前推荐。确认选项后指针改为红色。 | 已修复并重跑回场验收 |
+
+## 实现位置
+
+- `Scripts/Management/management_session.gd` 持有库存、草稿、待结算订单、开战快照和账本。状态查询返回副本。
+- `Scripts/Management/management_rules.gd` 集中配置试做数值，预览和结算调用同一套规则。
+- `Scenes/Management/management.tscn` 提供可嵌入的经营界面，`management_demo.tscn` 是可直接运行的模拟入口。
+- `Tests/Management/test_management.gd` 验证草稿隔离、整单预算、结算顺序、维修封顶、战果去重和重打。
+- 界面采用纸墨木刻参考图。港口剧情背景使用 ImageGen，素材登记在项目的 `LICENSES.md`。
+
+## 试做口径
+
+- 战斗编号使用连续正整数，首次期望编号由会话构造参数指定。战果由战斗侧确认后交给经营，重打在战果确认前请求。
+- 灯火档、三类弹药、船体三部位、初始资源、修理和产出用暂定配置。民意推荐按鸣金时的灯火锁定，固定产出使用下次结算后的灯火。
+- 预算以当前库存预留整单成本。维修按战后剩余耐久计算，存在实际维修时收取配置费用。升级补齐新增耐久并保留原有损伤。
+- 日历从第 1 日开始，每接纳一个战果推进一天。船体按舰体、帆索、火炮显示耐久。战斗侧负责回档入口。
+
+## 战斗侧接入
+
+战局控制器持有同一个会话实例。初战使用 `retry_battle()` 提供的开场快照，战斗结束后由战斗侧确认胜负、灯火及剩余败场数。接受结果后绑定经营场景。玩家鸣金时，经营场景通过 `battle_started(snapshot)` 发出下一战快照。每场战斗开打时将快照当作独立数据使用。
+
+| 接口 | 时机与返回值 |
+| --- | --- |
+| `ManagementSession.new("normal", 1)` | 开局创建一次。可用难度为 `easy`、`normal`、`hard`。可指定首战编号，之后按连续整数递增。 |
+| `retry_battle() -> Dictionary` | 取首次开战快照或重打尚未确认战果的当前战斗。经营阶段返回空字典。 |
+| `enter_rest(result: Dictionary) -> bool` | 战斗侧确认进入休整时调用。编号必须匹配当前战斗。接收成功返回 `true`，无效值及重复、过期、乱序结果返回 `false`。 |
+| `management.bind_session(session)` | 把会话绑定到 `management.tscn`。会话接受战果后显示经营，锁单后隐藏。 |
+| `management.battle_started(snapshot)` | 玩家成功鸣金时发出。自行编写 UI 时也可直接调用会话的 `start_battle()`，校验未通过时返回空字典。 |
+
+`BattleStart` 与 `BattleResult` 都是 Godot `Dictionary`。双方使用下列键名。
+
+| 字段 | `BattleStart` | `BattleResult` |
+| --- | --- | --- |
+| `battle_id: int` | 本次开战编号 | 同一次战斗的编号 |
+| `difficulty: String` | 会话难度 | — |
+| `won: bool` | — | 由战斗侧确认 |
+| `light: int` | 开战灯火 | 战后灯火，范围 0 至 100 |
+| `ammo: Dictionary` | 开战弹药 | 战后弹药，键为 `round` 实心弹、`chain` 链弹、`grape` 霰弹 |
+| `ship_level: int`、`fort_level: int` | 开战船堡等级 | — |
+| `ship_hp: Dictionary` | 开战各部位耐久 | 战后耐久，键为 `hull` 舰体、`rigging` 帆索、`guns` 火炮 |
+| `fort_hp: int` | 自动修复后的开战耐久 | 战后耐久 |
+| `defeats_left: int` | 开战前还能承担的败场数 | 战斗侧更新后的余败场 |
+
+耐久和库存均为非负整数。耐久上限由 `ManagementRules.ship_caps(level)` 和 `fort_cap(level)` 计算。战斗中的结果按开战等级校验。要重打时，战斗侧先调用 `retry_battle()`，再重新载入现场。战果提交成功后，当前订单和该场重打点已消费。
+
+```gdscript
+const ManagementSession := preload("res://Scripts/Management/management_session.gd")
+var session := ManagementSession.new("normal", 1)
+var first_start := session.retry_battle()
+var first_result := {
+	"battle_id": first_start.battle_id,
+	"won": true,
+	"light": 60,
+	"ammo": {"round": 8, "chain": 4, "grape": 2},
+	"ship_hp": {"hull": 76, "rigging": 52, "guns": 49},
+	"fort_hp": 68,
+	"defeats_left": 2,
+}
+# 战斗侧确认进入休整后调用。绑好会话的经营场景会刷新。
+var accepted := session.enter_rest(first_result)
+```
+
+以该示例战果进入首轮，先后选积极备战、升级战船、修理战船、铸实心弹，鸣金得到以下 `BattleStart`。
+
+```gdscript
+{
+	"battle_id": 2, "difficulty": "normal", "light": 60, "defeats_left": 2,
+	"ammo": {"round": 10, "chain": 5, "grape": 3},
+	"ship_level": 1, "ship_hp": {"hull": 76, "rigging": 52, "guns": 49},
+	"fort_level": 1, "fort_hp": 80,
+}
+```
+
+## 本地运行
+
+在 Godot 打开 `Scenes/Management/management_demo.tscn` 后按 **F6**。联调场景自动注入第 1 战战果。选完订单后鸣金，快照页可以模拟胜利、失败或重打。
+
+在 Godot 项目根目录运行以下命令。Windows 用本机 Godot 可执行文件替换 `godot`。
+
+```powershell
+godot --headless --path . --import
+godot --path . res://Scenes/Management/management_demo.tscn
+godot --headless --path . --script res://Tests/Management/test_management.gd
+```
+
+## 验收记录 · 2026-11-22
+
+### 无头验收
+
+- Godot 4.7.2 的 `test_management.gd` 通过 64/64 项断言。覆盖首轮产出、订单预算、战后结算顺序、满耐久免修理费、自动修堡封顶、重复鸣金、无效及重复战果、重打和罗盘回场。
+- 使用 Git 中的项目配置和无插件的临时副本，从空缓存导入，然后分别启动经营联调场景和原战斗主场景。进程均以 0 退出，引擎日志无错误。
+
+### Godot AI MCP
+
+- 在隔离副本中创建经营场景和联调场景的根节点。重新加载实现后，MCP 成功启动联调场景，运行时助手返回 `live`。
+- 罗盘修复后再次用 MCP 选择大力经营、鸣金、模拟失败。第 2 日画面可见灰色指针指向新灯火档推荐的平安度日，账本为 2/2。鸣金保持禁用，等待当轮常规经营确认。
+
+### Windows 桌面验收
+
+- 在 1280×720 用鼠标点击选项、拖动罗盘、切换事件再返回，核对指针、选中项和预览。库存、日历与账本在草稿修改期间维持原值。
+- 验证升级碉堡提示缺 1 研究点，修船和铸霰弹合计提示缺 3 材料。改为升级船和铸实心弹后鸣金，开战船级仍为 1，弹药为 10/5/3，碉堡耐久由 68 升到 80。重打后开战数值一致。
+- 模拟失败后进入第 2 日，材料 5、研究点 2、弹药 19/5/2、灯火 33、船级 2，碉堡耐久 47。滚动账本检查订单、维修和渺茫档固定产出，再在两日之间翻页。
+- 在 1600×720 查看宽窗口的资源栏、三栏和鸣金按钮。中栏随窗口加宽，右下角鸣金可见。
+
+### Markdown 与 Git
+
+- 用 UTF-8 严格读取 `.local/AGENTS.md`、`.local/plan.md` 和本文件，均可解码。`git check-ignore` 确认三份文件命中根目录的 `/.local` 规则。
+
+### 实际战斗联调
+
+战斗侧接入后，需要核对实际弹药余量、各部位损伤、余败场数和回档调用次序。目前双向接口使用模拟战果验收。
+
+## 港口插画
+
+素材使用内置 ImageGen 生成，保存至 `Assets/Art/UI/management_harbor.png`。生成提示词如下。
+
+> Create a single full-bleed panoramic 2D game background for an original Chinese coastal harbor management game. Art only. Match a Chinese woodblock print rendered as crisp handcrafted pixel art: ivory warm paper ground (#f5edda), dark near-black ink outlines (#202827), layered blue-green slate mountain silhouettes (#638482), muted teal seawater, tiny ochre touches. Wide elevated shore view during a quiet day between battles. Tidewater and two wooden junks with dark battened sails at left, a curving stone quay at right with low white plaster houses and dark tiled roofs, and a modest Chinese coastal watchtower atop the distant ridge. Graded clusters of discrete rectangular pixels, large high-contrast silhouettes, subtle paper grain, restrained flat colors. Keep the important sails, rooftops, and shoreline within the middle 60 percent of the image height for a wide UI crop. Maximum landscape aspect ratio, cohesive illustrated scene. No writing, no lettering, no interface, no frame, no borders, no watercolor blur, no combat.
+
+# 敌船模块 M12/M13
+
+按本地计划和 30 号敌人开发规格在 `operation_dev` 的战斗主场景交付 E-01。部位规则、跨道判定、行为和碉堡前沿分别核对策划案 23、26、29、33 号。
+
+## 配置与行为
+
+- `Data/Combat/enemy_e01.tres` 保存船型配置。通过 `Battle.enemy_config` 可用同一场景加载其他同结构配置，各船独立计算当前耐久、装填和行为。
+- E-01 使用 120×56 的占位船图，默认 70 px/s，距堡 320 px 停位，同道中心间隔至少 144 px。固定初速 850 px/s，射程 400 px，单发 8，每 3 秒装填，获取新目标等待 0.3 秒。堡进入射程后可边打边推进到停位线。
+- 玩家同道进入射程时，敌船停船并优先瞄准玩家。玩家换道时会立即更新逻辑航道，并在位置贴齐前同时占用新旧航道、暂停开火。后坐只改变显示和实际炮口坐标，部位箱和占位仍跟随逻辑锚点。
+- 玩家发射沿用原型装填和弹药输入，实心弹试做伤害 12。碉堡采用 400 试做耐久、炮台单发 6，保留原型的逐道炮台、射程和射速。初验中炮台可自动守住，难度仍待波次和正式堡配置联调。
+
+## 模块接口
+
+| 接口 | 数据和触发时机 |
+| --- | --- |
+| `EnemyShip.combat.parts.part_changed(part, hp, condition)` | 部位耐久实际变化时触发，含部位枚举、绝对耐久和三档状态。玩家与敌人共用 `ShipParts`。炮台伴随舰体伤害和四条舵与撞角传导路径分别配置。 |
+| `EnemyShip.try_change_lane(index) -> bool` | 供后续船型按行为调用。启用换道时遇到占位，返回失败并设置 `lane_change_fail_reason = "有人"`。E-01 默认保持固定航道。 |
+| `EnemyShip.set_morale(value, threshold)` | M14 提供士气与阈值。达到阈值后敌船停止开火，遵守占位并从右侧撤退。 |
+| `Battle.enemy_sunk(ship)` | 舰体归零时立即退出目标集合，计一次击沉并发出一次事件，可用于 M14 奖励或士气处理。 |
+| `Battle.enemy_retreated(ship)` | 撤退船完整离开海面右侧时触发。击沉计数和奖励事件保持原值。 |
+| `Battle.launch_projectile(origin, velocity, lane, team, damage, ammo_type)` | 发射时固定航道、阵营、伤害、弹种。玩家、碉堡和敌船共用同一个物理步进与命中入口。M3 范围伤害可复用 `Lanes.targets_in_lane`。 |
+| `Projectile.fortress_hit(damage)` | 敌弹首先命中堡前沿时扣共享耐久。堡归零判负，达到原型击沉目标判胜，结算跳转到经营演示。 |
+
+经营场景当前使用演示战果。真实 `BattleStart` 和 `BattleResult` 接线需联调弹种、五部位与经营字典映射。正式弹种效果、波次与士气、奖励、碉堡射界和灯火分别由 M3、M14、M15 接续。
+
+## 初步验收 · 2026-11-23
+
+- **无头回归**　Godot 4.7.2，独立副本使用 Git 中的项目配置从空缓存导入。敌船 93/93，经营 64/64，主场景无头启动正常。敌船断言覆盖同道五船、目标切换、转火冷却、软硬命中、扩展部位箱、传导、嵌套伤害时的击沉去重、撤退、堡判负和结算跳转。
+- **Godot AI MCP**　确认运行时三个部位箱及堡耐久变化。复验发送 `move_up` 和 `fire`，玩家坐标由 (420, 360) 变为 (420, 216)，弹药从 30 降到 29。随战斗结束确认进入 `ManagementDemo`，运行时日志无游戏脚本错误。编辑器插件自身的客户端状态刷新曾报错，运行时握手完成后读取和输入可用。
+- **Windows 桌面**　验证左键开火、敌船炮口方向、受击和经营画面。慢速复测由左键触发时，船图后坐偏移约 (−8.82, 2.94) px，逻辑锚点仍为 (420, 360)，航道仍为 2。桌面工具注入的 W 扫描码未命中物理键绑定，换道以 MCP 动作和无头输入回归验收。
+- **压力测试**　D3D12 Forward+，1280×720，10 艘船、30 个部位箱，每物理帧补足 40 发炮弹。8 秒采样平均 60.00 FPS，画面帧时 p95 为 17.34 ms，物理帧耗时 p95 为 3.14 ms。
+
+在独立项目副本根目录执行以下命令。将 `godot` 替换为本机的 Godot 4.7 可执行文件。
+
+```powershell
+godot --headless --editor --import --path .
+godot --headless --path . --script res://Tests/Combat/test_enemy_ship.gd
+godot --headless --path . --script res://Tests/Management/test_management.gd
+godot --headless --path . --quit-after 1200
+godot --path . --resolution 1280x720 --script res://Tests/Combat/bench_enemy_ship.gd
+```
+
+# 主角船 v2 与 E-01 融合 · 2026-11-24
+
+合并沿用 E-01 模板、同道占位、选敌和撤退，以及共用部位状态和扫掠命中。主角船保留双炮、独立装填、三仓弹药、单发 / 齐射和自动维修。两种船使用协作者的贴图及受损图层，炮台、帆和舰体的命中区按贴图位置对齐。
+
+| 返工项 | 已核对的行为 |
+| --- | --- |
+| T-112 画面分层 | 高度 144 px 以上为天空和 HUD。五条海道有六条水线，每道按水线、内容、水体的顺序绘制。船随换道更新层级。隐藏一条线时，其余画面像素不变。炮弹在发射道入水回收，水花沿该道水线显示约 0.4 秒。 |
+| T-113 船体与炮管 | 主角船按源尺寸的 1/4 渲染，船图可见宽 74 px。炮管枢轴和炮口随同一个炮台箱缩放。摧毁帆后完整帆布被移除，显示破坏贴图。最终美术水门的米制宽度等像素比例确定后再复核。 |
+| T-114 航行 | 正常航速 25 px/s。换道时可瞄准，左右移动和开火锁定至换道动画结束。原道与目标道的占位在动画期间都保留。 |
+| T-115 后坐 | 开炮沿反向改变实际 X 坐标，在岸壁及同道占位处截停。下沉和船头角度约 1 秒回复，后退后的 X 作为后续开炮位置。 |
+| T-116 弹速 | 实心 / 破帆 / 爆炸用 520 / 680 / 420 px/s，重力 900，阻力 0。预瞄与实弹共用步进和入水交点。爆炸只在发射道结算，默认无自伤。 |
+| T-117 碉堡 | 左侧占宽 60 px，初始炮道为 0、1、3、4。补炮后水门道最多 1 门，总数最多 6 门。融合版按 11-24 M15 的炮位判定射界。协作者 v0.0 版保留返工卡要求的可关闭虚线。 |
+| T-118 接舷提示 | 同道两船船身水平净距小于 60 px 时输出敌船名称，间隔至少 1 秒。船身间距使提示能在 E-01 保留 144 px 中心占位的情况下触发。 |
+
+`Lanes.water_alpha` 初始为 **0.85**，可在检查器调整。玩家炮弹由 `PlayerWeapon.shot_requested` 接入 `Battle.launch_projectile`，敌人与堡炮也使用该入口。击沉、撤退、堡受击和战后跳转继续沿用原战斗接口。一发爆炸击沉多艘船时，每艘都先计数并发出事件，随后进入胜利结算。经营入口为 `management_demo.tscn`，仍使用原演示数据。
+
+在独立项目副本通过冷导入后，可运行以下回归。
+
+```powershell
+godot --headless --path . --script res://Tests/Combat/test_battle_merge.gd
+godot --headless --path . --script res://Tests/Combat/test_enemy_ship.gd
+godot --headless --path . --script res://Tests/Management/test_management.gd
+godot --path . --resolution 1280x720 --script res://Tests/Combat/bench_enemy_ship.gd
+```
+
+## 融合验收实测
+
+- Godot 4.7.2 冷导入通过。协作者版主角船 35/35、经营 64/64。融合版战斗 24/24、敌船 93/93、经营 64/64。两个项目的战斗主场景均可启动。
+- 1280×720 同机位截图已检查。后坐时船底进入水色，炮弹在预瞄点生成水花，受损帆布切换贴图。隐藏中道水线时，截图仅对应两行像素变化。
+- 同一台机器的无头压力测试维持 10 艘船、30 个部位箱和每物理帧 40 发炮弹。原版和融合版均为 60 FPS，物理帧耗时 p95 从 10.61 ms 降到 7.50 ms。使用 D3D12 隐藏窗口运行时，两版分别为 19.62 和 20.04 FPS。
+
+## 堡、主角船与 E-01 联调 · 2026-11-25
+
+合入 `zty_dev` 的 `e3019be` 堡贴图与水门流程，按策划反馈更新同道重叠、主角船换道和射击。战斗主场景使用现有 `ShipCombat` 和 `Projectile` 处理三个模块的伤害。堡开局四门炮，升至二级时水门道补一门。各炮直射本道最靠堡的敌船，友军可通过其弹道。
+
+| 接口 | 行为 |
+| --- | --- |
+| `on_fort_damaged_tier(tier)` | 堡耐久穿过 60%、25%、0 时按档更新外观并扣灯火，每档每场只扣一次。 |
+| `on_battle_finished(won, by_fort_breach)` | 破堡时冻结操作，最近的存活敌船驶进水门后登记败场。战果登记后发出信号，余败场归零时发出 `ending_reached`。 |
+| `boarding_contact_started(ship)` | 主角船换道完成或航行接近敌船后，可收到最近一艘敌船。持续接触期间发一次，脱离所有候选后可重新触发。旧的 `boarding_nearby(enemy_name)` 也在此时发出。 |
+| `management.bind_session(session, battle_scene)` | 真实战斗通过同一份 `ManagementSession` 交付战果。经营鸣金后用下一战快照返回战斗。`BattleStart` 和 `BattleResult` 继续使用 `round/chain/grape`，画面显示实心弹、破帆弹、爆炸弹。耐久按一级比例换算，升级后的上限和损伤会带入实战。 |
+
+试做参数可在检查器调整。E-01 正常航速为 18–24 px/s，主角船为 25 px/s。主角船沉没扣 10 灯火，等待 3 秒后恢复部位耐久并从水门驶出，带上剩余弹药。三种玩家炮弹初速为 640 / 680 / 620 px/s。爆炸冲击仅在发射道生效。开战前自动修堡继续使用经营会话的难度配置。
+
+Godot 4.7.2 在独立副本中冷导入通过。上述无头命令分别验证三模块融合 59/59、敌船 90/90、经营 64/64。战斗主场景与独立经营演示均启动成功。1280×720 实际渲染核对了出水门、四档堡贴图、炮口预瞄、换弹提示、敌船入门和经营战果。

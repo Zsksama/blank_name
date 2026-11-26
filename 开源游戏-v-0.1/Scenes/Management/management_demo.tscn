@@ -1,0 +1,109 @@
+[gd_scene format=3 uid="uid://c30n5aeoc2kvg"]
+
+[ext_resource type="Script" path="res://Scripts/Management/management_demo.gd" id="1_demo"]
+[ext_resource type="PackedScene" path="res://Scenes/Management/management.tscn" id="2_management"]
+[ext_resource type="Theme" path="res://Scenes/Management/management_theme.tres" id="3_theme"]
+
+[node name="ManagementDemo" type="Control" unique_id=643717469]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("3_theme")
+script = ExtResource("1_demo")
+
+[node name="Management" parent="." instance=ExtResource("2_management")]
+layout_mode = 1
+
+[node name="BattlePanel" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Backdrop" type="ColorRect" parent="BattlePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.236, 0.249, 0.208, 1)
+
+[node name="Center" type="CenterContainer" parent="BattlePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="BattlePanel/Center"]
+custom_minimum_size = Vector2(604, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="BattlePanel/Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 13
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 13
+
+[node name="Column" type="VBoxContainer" parent="BattlePanel/Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BattleTitle" type="Label" parent="BattlePanel/Center/Panel/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Heading"
+theme_override_font_sizes/font_size = 34
+
+[node name="BattleRule" type="HSeparator" parent="BattlePanel/Center/Panel/Margin/Column"]
+layout_mode = 2
+
+[node name="BattleSnapshot" type="Label" parent="BattlePanel/Center/Panel/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+theme_override_constants/line_spacing = 7
+
+[node name="RetryCount" type="Label" parent="BattlePanel/Center/Panel/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Muted"
+
+[node name="Actions" type="HBoxContainer" parent="BattlePanel/Center/Panel/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="MockWin" type="Button" parent="BattlePanel/Center/Panel/Margin/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 45)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_default_cursor_shape = 2
+text = "模拟胜利"
+
+[node name="MockLoss" type="Button" parent="BattlePanel/Center/Panel/Margin/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 45)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_default_cursor_shape = 2
+text = "模拟失败"
+
+[node name="Retry" type="Button" parent="BattlePanel/Center/Panel/Margin/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 45)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_default_cursor_shape = 2
+text = "重打本场"

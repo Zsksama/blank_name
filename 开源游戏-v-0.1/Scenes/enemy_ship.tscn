@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://df25c2thedw8i"]
+
+[ext_resource type="Script" uid="uid://cvuyvtr0jw4ro" path="res://Scripts/enemy_ship.gd" id="1_enemy"]
+[ext_resource type="Resource" path="res://Data/Combat/enemy_e01.tres" id="2_config"]
+[ext_resource type="Script" path="res://Scripts/Combat/ship_combat.gd" id="3_combat"]
+
+[node name="EnemyShip" type="Area2D" unique_id=1694890312]
+z_index = 5
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+script = ExtResource("1_enemy")
+config = ExtResource("2_config")
+
+[node name="Combat" type="Node2D" parent="."]
+script = ExtResource("3_combat")
+
+[node name="Sprite2D" type="Sprite2D" parent="Combat" unique_id=1375947794]

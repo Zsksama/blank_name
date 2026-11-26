@@ -1,0 +1,12 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# 构建产物
+/build/
+
+# 系统垃圾文件
+Thumbs.db
+.DS_Store
+
+/addons
