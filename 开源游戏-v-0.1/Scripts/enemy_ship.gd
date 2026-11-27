@@ -53,12 +53,14 @@ var lane_change_fail_reason := ""
 var boarding_power := 0.0
 var boarding_locked := false
 var horizontal_speed := 0.0
+var weave_strength := 0.0
 
 var _reload := 0.0
 var _target_delay := 0.0
 var _target := Target.NONE
 var _cruise_speed := 0.0
 var _sway_phase := 0.0
+var _firing_anchor_x := NAN
 var _deck: WeaponDeck
 var _flag: CentipedeFlag
 
@@ -85,14 +87,15 @@ func _ready() -> void:
 	_deck.name = "WeaponDeck"
 	_deck.size = (weapon_box.shape as RectangleShape2D).size
 	_deck.parts = combat.parts
-	weapon_box.add_child(_deck)
+	combat.set_part_art(ShipParts.Part.CANNON, _deck)
 	combat.parts.part_changed.connect(_on_part_changed)
 	if formation_leader:
 		_flag = CentipedeFlag.new()
 		_flag.name = "CentipedeFlag"
 		_flag.position = Vector2(-8.0, -config.size.y * 0.44)
-		combat.add_child(_flag)
+		combat.get_node("Visual").add_child(_flag)
 	if lanes != null:
+		horizontal_speed = -_speed()
 		_align_to_lane()
 		lanes.register_ship(combat)
 
@@ -104,6 +107,7 @@ func set_morale(value: float, threshold: float) -> void:
 
 func step(delta: float, player: ShipCombat, fortress_front: float, fortress_alive: bool, battle_morale: float = INF) -> void:
 	horizontal_speed = 0.0
+	weave_strength = 0.0
 	if not combat.targetable or boarding_locked:
 		return
 	if action == Action.FLEE or battle_morale < 0.10 or morale <= retreat_threshold:
@@ -129,7 +133,8 @@ func step(delta: float, player: ShipCombat, fortress_front: float, fortress_aliv
 		elif config.player_stop_distance > 0.0:
 			player_stop_x = maxf(fortress_front + config.size.x * 0.5,
 				player.global_position.x + config.player_stop_distance)
-		_navigate(delta, player_stop_x, closing_for_boarding and x - player.global_position.x <= config.size.x)
+		_navigate(delta, player_stop_x, closing_for_boarding and x - player.global_position.x <= config.size.x,
+			player.global_position.x - config.attack_range)
 		_aim_and_fire(player.aim_point())
 	elif fortress_alive and absf(x - fortress_front) <= config.attack_range:
 		action = Action.ATTACK_FORTRESS
@@ -179,29 +184,46 @@ func consider_dodge(_projectile: Projectile) -> void:
 	pass
 
 
-func _navigate(delta: float, stop_x: float, align_for_contact: bool = false) -> bool:
-	var distance := _speed() * delta
+func _navigate(delta: float, stop_x: float, straight_for_contact: bool = false, fire_left_limit: float = -INF) -> bool:
+	var speed := _speed()
+	var distance := speed * delta
+	var follow_limit := -INF
 	if config.approaches_for_boarding:
-		stop_x = maxf(stop_x, lanes.friendly_follow_limit(combat))
+		follow_limit = lanes.friendly_follow_limit(combat)
 	if is_instance_valid(formation_predecessor) and formation_predecessor.combat.targetable \
 		and formation_predecessor.lane_index == lane_index and formation_predecessor.action != Action.FLEE:
-		stop_x = maxf(stop_x, formation_predecessor.global_position.x + config.min_gap)
-	var advancing := global_position.x > stop_x
-	var amplitude := config.sway_advance if advancing else config.sway_idle
-	var lateral := 0.0
-	if align_for_contact:
-		lateral = clampf(lanes.lane_bottom_y(lane_index) - global_position.y, -distance, distance)
-	elif amplitude > 0.0:
-		var hz := config.sway_advance_hz if advancing else config.sway_idle_hz
-		_sway_phase = fposmod(_sway_phase + TAU * hz * delta * combat.parts.speed_multiplier(), TAU)
-		var target_y := lanes.lane_bottom_y(lane_index) - amplitude * (1.0 + sin(_sway_phase))
-		lateral = clampf(target_y - global_position.y, -distance, distance)
-	# 走位和推进共用同一个速度上限，真实坐标随之更新。
-	var forward_limit := sqrt(maxf(0.0, distance * distance - lateral * lateral))
-	var forward := minf(maxf(global_position.x - stop_x, 0.0), forward_limit)
-	global_position += Vector2(-forward, lateral)
-	horizontal_speed = -forward / maxf(delta, 0.000001)
-	return forward > 0.0
+		follow_limit = maxf(follow_limit, formation_predecessor.global_position.x + config.min_gap)
+	var x := global_position.x
+	var remaining := maxf(0.0, x - maxf(stop_x, follow_limit))
+	var motion := -minf(distance, remaining)
+	if remaining > 0.0:
+		_firing_anchor_x = NAN
+		if not straight_for_contact and config.sway_advance > 0.0 and config.sway_advance_hz > 0.0:
+			var reverse_speed := _advance_sway(config.sway_advance, config.sway_advance_hz, delta)
+			# 短暂回摆后重新推进，整个过程沿着水线走。
+			var turn := pow(0.5 + 0.5 * sin(_sway_phase), 4.0)
+			motion = maxf(-remaining, lerpf(-speed, reverse_speed, turn) * delta)
+	elif not straight_for_contact and _target != Target.NONE and config.sway_idle > 0.0 and config.sway_idle_hz > 0.0:
+		if is_nan(_firing_anchor_x):
+			_firing_anchor_x = x
+		var left_edge := maxf(follow_limit, maxf(fire_left_limit, lanes.sea_left + config.size.x * 0.5))
+		var left := maxf(left_edge, _firing_anchor_x - 2.0 * config.sway_idle)
+		if left < _firing_anchor_x:
+			_advance_sway((_firing_anchor_x - left) * 0.5, config.sway_idle_hz, delta)
+			var aim_x := lerpf(left, _firing_anchor_x, 0.5 + 0.5 * sin(_sway_phase))
+			motion = move_toward(x, aim_x, distance) - x
+	# 船底沿航道水线航行，推进和转向共用横向限速。
+	global_position.x += motion
+	horizontal_speed = motion / maxf(delta, 0.000001)
+	return remaining > 0.0 and not is_zero_approx(motion)
+
+
+func _advance_sway(amplitude: float, hz: float, delta: float) -> float:
+	var rate := TAU * hz * combat.parts.speed_multiplier()
+	_sway_phase = fposmod(_sway_phase + rate * delta, TAU)
+	var speed := minf(_speed(), amplitude * rate)
+	weave_strength = speed / maxf(_cruise_speed, 0.001)
+	return speed
 
 
 func _flee(delta: float) -> void:
@@ -223,6 +245,7 @@ func _speed() -> float:
 func _select_target(next: Target) -> void:
 	if next != _target:
 		_target = next
+		_firing_anchor_x = NAN
 		_target_delay = config.target_switch_delay
 
 

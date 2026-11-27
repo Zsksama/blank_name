@@ -74,7 +74,7 @@ func _test_targets_and_recoil() -> void:
 	var battle = _make_battle()
 	var player: PlayerShip = battle.get_node("PlayerShip")
 	var enemy: EnemyShip = battle.spawn_enemy(2)
-	var sprite := enemy.combat.get_node("Sprite2D") as Sprite2D
+	var sprite := enemy.combat.visual_sprite()
 	_check(sprite.flip_h, "The new E-01 art is mirrored to face the fortress")
 	battle._physics_process(0.2)
 	_check(enemy.action == EnemyShip.Action.ADVANCE and _shots(battle).is_empty(),
@@ -137,7 +137,7 @@ func _test_targets_and_recoil() -> void:
 	battle = _make_battle()
 	player = battle.get_node("PlayerShip")
 	enemy = battle.spawn_enemy(2)
-	sprite = enemy.combat.get_node("Sprite2D")
+	sprite = enemy.combat.visual_sprite()
 	enemy.position.x = 730.0
 	player.position.x = 910.0
 	battle._physics_process(0.1)

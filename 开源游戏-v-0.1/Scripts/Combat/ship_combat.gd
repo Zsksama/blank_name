@@ -3,6 +3,7 @@ extends Node2D
 
 signal sunk
 signal blast_pushed(distance: float)
+signal struck(part: ShipParts.Part, point: Vector2)
 
 enum Team { ALLY, ENEMY }
 
@@ -19,6 +20,7 @@ var targetable := true
 var size: Vector2
 var sprite_faces_left := false
 var muzzle_offset := Vector2(0.54, -0.08)
+var hit_damage_multiplier := 1.0
 
 var _hitboxes: Array[CollisionShape2D] = []
 var _hitbox_centers: Array[Vector2] = []
@@ -28,13 +30,22 @@ var _recoil: Tween
 var _hit_flash: Tween
 var _muzzle_flash: Sprite2D
 var _sail_material: ShaderMaterial
+var _sail_uv := Vector4.ZERO
+var hidden_sail_uv := Vector4.ZERO
 var _sail_overlay: Sprite2D
 var _hull_overlay: Sprite2D
 var _sail_torn_texture: Texture2D
 var _sail_ruined_texture: Texture2D
 var _base_tint := Color.WHITE
+var _wave_y := 0.0
+var _wave_tilt := 0.0
+var _boarding_offset := Vector2.ZERO
+var _boarding_width := 1.0
+var _part_art: Dictionary[ShipParts.Part, Node2D] = {}
 
-@onready var _sprite: Sprite2D = $Sprite2D
+@onready var _visual: Node2D = $Visual
+@onready var _sprite: Sprite2D = $Visual/Sprite2D
+@onready var _weapon: PlayerWeapon = get_node_or_null("Weapon")
 
 
 func configure(
@@ -92,9 +103,10 @@ func configure_damage_art(torn: Texture2D, ruined: Texture2D, burned: Texture2D,
 		var texture_size := _sprite.texture.get_size()
 		_sail_material = ShaderMaterial.new()
 		_sail_material.shader = SAIL_SHADER
-		_sail_material.set_shader_parameter("sail_region", Vector4(
+		_sail_uv = Vector4(
 			sail_cutout.position.x / texture_size.x, sail_cutout.position.y / texture_size.y,
-			sail_cutout.end.x / texture_size.x, sail_cutout.end.y / texture_size.y))
+			sail_cutout.end.x / texture_size.x, sail_cutout.end.y / texture_size.y)
+		_sail_material.set_shader_parameter("sail_region", _sail_uv)
 		_sprite.material = _sail_material
 	if burned != null:
 		_hull_overlay = Sprite2D.new()
@@ -112,6 +124,7 @@ func _refresh_damage_art(part: ShipParts.Part, _hp: float, condition: ShipParts.
 			var ruined := condition == ShipParts.Condition.DESTROYED
 			if _sail_material != null:
 				_sail_material.set_shader_parameter("sail_destroyed", ruined)
+				hidden_sail_uv = _sail_uv if ruined else Vector4.ZERO
 			if _sail_overlay != null:
 				_sail_overlay.texture = _sail_ruined_texture if ruined else _sail_torn_texture
 				_sail_overlay.visible = condition != ShipParts.Condition.NORMAL and _sail_overlay.texture != null
@@ -155,9 +168,44 @@ func aim_point() -> Vector2:
 	return _hitboxes[ShipParts.Part.HULL].global_position
 
 
-func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float) -> void:
-	if not targetable or not parts.apply_hit(part, ammo, damage):
+func visual_sprite() -> Sprite2D:
+	return _sprite
+
+
+func visible_part_position(part: ShipParts.Part) -> Vector2:
+	return _visual.to_global(_hitboxes[part].position)
+
+
+func set_part_art(part: ShipParts.Part, art: Node2D) -> void:
+	_part_art[part] = art
+	art.position = _hitboxes[part].position
+	_visual.add_child(art)
+
+
+func set_wave_pose(offset_y: float, tilt: float) -> void:
+	_wave_y = offset_y
+	_wave_tilt = tilt
+	_apply_visual_pose()
+
+
+func set_boarding_pose(offset: Vector2, width: float) -> void:
+	_boarding_offset = offset
+	_boarding_width = width
+	_apply_visual_pose()
+
+
+func _apply_visual_pose() -> void:
+	var wave := Transform2D(_wave_tilt, Vector2(0.0, _wave_y))
+	var boarding := Transform2D(0.0, Vector2(_boarding_width, 1.0), 0.0, _boarding_offset)
+	_visual.transform = wave * boarding
+	if _weapon != null:
+		_weapon.apply_visual_pose(_visual.transform)
+
+
+func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float, point: Vector2 = Vector2.INF) -> void:
+	if not targetable or not parts.apply_hit(part, ammo, damage * hit_damage_multiplier):
 		return
+	struck.emit(part, visible_part_position(part) if point == Vector2.INF else point)
 	if _finish_if_sunk():
 		return
 
@@ -196,6 +244,9 @@ func face(heading: float) -> void:
 		var center := _hitbox_centers[index]
 		var box := _hitboxes[index]
 		box.position = Vector2(center.x * _heading, center.y)
+		var art := _part_art.get(index as ShipParts.Part) as Node2D
+		if art != null:
+			art.position = box.position
 		var box_size := (box.shape as RectangleShape2D).size
 		var rect := Rect2(box.position - box_size * 0.5, box_size)
 		_hitbox_bounds = rect if index == 0 else _hitbox_bounds.merge(rect)

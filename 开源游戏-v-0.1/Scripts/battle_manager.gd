@@ -41,6 +41,7 @@ const BOARDING_DIFFICULTY := {"easy": 0.9, "normal": 1.0, "hard": 1.1}
 @export var turret_fire_range: float = 400.0
 @export var turret_shell_speed: float = 180.0
 @export var turret_damage: float = 6.0
+@export_range(0.0, 12.0, 0.1) var turret_weave_spread_deg := 6.0
 
 @export_group("水门")
 @export var gate_launch_time: float = 1.6
@@ -122,6 +123,8 @@ func _ready() -> void:
 	_player.combat.parts.part_changed.connect(_on_player_part_changed)
 	_prepare_spawning()
 	_boarding.configure(func(): return lamp_value, func(): return enemy_morale, _battle_start.ship_level)
+	_turret_root.watchtower.track(_enemies)
+	_boarding.active_changed.connect(_on_boarding_active_changed)
 	_boarding.finished.connect(_on_boarding_finished)
 	_boarding.morale_changed.connect(_on_boarding_morale_changed)
 	_morale_bar.fill_mode = ProgressBar.FILL_BOTTOM_TO_TOP
@@ -186,6 +189,7 @@ func _prepare_spawning() -> void:
 	var levels := spawn_levels if not spawn_levels.is_empty() else EnemySpawner.LEVELS
 	var level_index := clampi(_battle_start.battle_id - 1, 0, levels.size() - 1)
 	spawn_level = levels[level_index]
+	_lanes.sea.set_weather(spawn_level.wave_amplitude_scale(), spawn_level.wave_speed_scale())
 	_spawner = EnemySpawner.new()
 	_spawner.name = "EnemySpawner"
 	add_child(_spawner)
@@ -348,6 +352,8 @@ func _on_player_sunk(player: PlayerShip) -> void:
 	lamp_value = maxi(0, lamp_value - player_sunk_light_loss)
 	_refresh_status()
 	await get_tree().create_timer(player_respawn_delay, false, false, true).timeout
+	if _boarding.active:
+		await _boarding.active_changed
 	if not is_over and player.combat.parts.is_sunk():
 		await _launch_player_from_gate()
 		if player.combat.targetable:
@@ -392,8 +398,11 @@ func _update_turrets(delta: float) -> void:
 		var target := _frontmost_enemy_in_lane(lane, origin.x + turret_fire_range)
 		if target == null:
 			continue
-		var aim := target.combat.aim_point()
-		launch_projectile(origin, origin.direction_to(aim) * turret_shell_speed,
+		var heading := origin.direction_to(target.combat.aim_point())
+		var spread := turret_weave_spread_deg * target.weave_strength
+		if spread > 0.0:
+			heading = heading.rotated(deg_to_rad(_rng.randf_range(-spread, spread)))
+		launch_projectile(origin, heading * turret_shell_speed,
 			lane, ShipCombat.Team.ALLY, turret_damage, ShipParts.Ammo.SOLID, 0.0)
 		_turret_timers[index] = turret_fire_interval
 
@@ -450,6 +459,11 @@ func _boarding_gap(ship: EnemyShip, player_hull: Rect2) -> float:
 func _on_boarding_finished(result: int) -> void:
 	boarding_finished.emit(result)
 	_check_for_victory()
+
+
+func _on_boarding_active_changed(active: bool) -> void:
+	_lanes.sea.set_boarding(active)
+	_turret_root.watchtower.set_frozen(active)
 
 
 func _on_boarding_morale_changed(points: float) -> void:

@@ -264,6 +264,10 @@ func _test_camera_and_cooldown() -> void:
 	battle._check_boarding(0.0)
 	await create_timer(0.40, true, false, true).timeout
 	_check(boarding.active and _camera_in_map(battle), "The boarding camera stays inside the map at the left edge")
+	boarding._exchange()
+	await process_frame
+	await process_frame
+	_check(_camera_in_map(battle), "Damage feedback shakes within the same camera clamp")
 	_key(KEY_T, true)
 	await create_timer(1.1, true, false, true).timeout
 	_key(KEY_T, false)

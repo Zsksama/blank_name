@@ -74,7 +74,7 @@ func _test_enemy_types() -> void:
 		colors.append(ship.config.tint)
 		var deck := ship.combat.hitbox(ShipParts.Part.CANNON)
 		var hull := ship.combat.hitbox(ShipParts.Part.HULL)
-		var marker := ship.get_node("Combat/Hitboxes/hit_cannon/WeaponDeck") as Node2D
+		var marker := ship.get_node("Combat/Visual/WeaponDeck") as Node2D
 		_check(deck.end.y <= hull.position.y and deck.get_center().x < ship.global_position.x
 			and marker.global_position.is_equal_approx(deck.get_center()),
 			"The visible weapons deck and HP bar follow the protruding hitbox")
@@ -97,37 +97,47 @@ func _test_fast_ship_sway() -> void:
 	var battle = _battle()
 	var player := battle.get_node("PlayerShip") as PlayerShip
 	var fast: EnemyShip = battle.spawn_enemy(0, EnemySpawner.TYPES[EnemyShipConfig.Type.FAST], 600.0)
+	fast._sway_phase = 0.0
 	var running := _measure_sway(fast, player, 450)
-	var advanced := fast.position.x < 500.0
+	var advanced := fast.position.x < 535.0
 	fast.position.x = 260.0
 	var stationary := _measure_sway(fast, player, 450)
-	_check(advanced and fast.position.x == 260.0 and fast.action == EnemyShip.Action.ATTACK_FORTRESS,
-		"The fast ship advances and continues swaying from a fixed firing line")
-	_check(running.x > 31.0 and stationary.x > 15.0 and stationary.x < 20.0,
-		"The hitboxes move widely during advance and have a smaller span when firing")
-	_check(maxf(running.y, stationary.y) <= 22.01, "Combined forward and lateral movement is capped at 22 px/s")
+	_check(advanced and running.fastest_right > 10.0 and running.fastest_left < -15.0,
+		"The fast ship reverses horizontally while making progress toward the fortress")
+	_check(stationary.span > 15.0 and stationary.span < 20.0 and stationary.farthest_x <= 260.01
+		and fast.action == EnemyShip.Action.ATTACK_FORTRESS, "The fast ship sways in a narrower band within firing range")
+	_check(maxf(running.water_gap, stationary.water_gap) < 0.01,
+		"A weaving fast ship keeps its keel on the lane waterline")
+	_check(maxf(running.peak_speed, stationary.peak_speed) <= 22.01, "Horizontal movement is capped at 22 px/s")
 	battle.free()
 
 
-func _measure_sway(ship: EnemyShip, player: PlayerShip, frames: int) -> Vector2:
+func _measure_sway(ship: EnemyShip, player: PlayerShip, frames: int) -> Dictionary:
 	var high := -INF
 	var low := INF
-	var peak_speed := 0.0
+	var fastest_left := 0.0
+	var fastest_right := 0.0
+	var water_gap := 0.0
+	var water_y := ship.lanes.lane_bottom_y(ship.lane_index)
 	for frame in range(frames):
 		var last := ship.position
 		ship.step(1.0 / 60.0, player.combat, 60.0, true)
-		var y := ship.combat.aim_point().y
+		var x := ship.position.x
 		if frame > 100:
-			high = maxf(high, y)
-			low = minf(low, y)
-		peak_speed = maxf(peak_speed, last.distance_to(ship.position) * 60.0)
-	return Vector2(high - low, peak_speed)
+			high = maxf(high, x)
+			low = minf(low, x)
+		var speed := (x - last.x) * 60.0
+		fastest_left = minf(fastest_left, speed)
+		fastest_right = maxf(fastest_right, speed)
+		water_gap = maxf(water_gap, absf(ship.position.y - water_y))
+	return {"span": high - low, "farthest_x": high, "fastest_left": fastest_left, "fastest_right": fastest_right,
+		"peak_speed": maxf(-fastest_left, fastest_right), "water_gap": water_gap}
 
 
 func _test_fortress_hit_rate() -> void:
 	var battle = _battle()
+	battle._rng.seed = SEED
 	var player := battle.get_node("PlayerShip") as PlayerShip
-	var lanes := battle.get_node("Lanes") as Lanes
 	var projectiles := battle.get_node("Projectiles") as Node2D
 	var hits := [0, 0]
 	for type in [EnemyShipConfig.Type.FAST, EnemyShipConfig.Type.NORMAL]:
@@ -135,7 +145,7 @@ func _test_fortress_hit_rate() -> void:
 		for i in range(24):
 			var ship: EnemyShip = battle.spawn_enemy(0, config, 418.0)
 			ship._sway_phase = TAU * i / 24.0
-			ship.position.y = lanes.lane_bottom_y(0) - config.sway_advance * (1.0 + sin(ship._sway_phase))
+			ship.step(1.0 / 60.0, player.combat, 60.0, true)
 			battle._turret_timers[0] = 0.0
 			battle._update_turrets(0.0)
 			if projectiles.get_child_count() == 0:

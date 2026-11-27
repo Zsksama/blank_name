@@ -6,8 +6,10 @@ enum Result { WIN, FLEE, LOSE }
 
 signal finished(result: int)
 signal morale_changed(points: float)
+signal active_changed(active: bool)
 
 const ManagementRules := preload("res://Scripts/Management/management_rules.gd")
+const EFFECTS := preload("res://Scripts/Combat/boarding_effects.gd")
 const MORALE_FACTORS := [1.2, 0.9, 0.75, 1.3]
 const DAMAGE_SPLASH := 0.3
 const POWER_TO_HP := 0.2
@@ -46,6 +48,7 @@ var _ship_level := 1
 var _exchange_timer: Timer
 var _decay_timer: Timer
 var _flee_timer: Timer
+var _effects: EFFECTS
 
 var _camera: Camera2D
 var _camera_tween: Tween
@@ -75,6 +78,9 @@ func _ready() -> void:
 	_camera.name = "BoardingCamera"
 	_camera.enabled = false
 	add_child(_camera)
+	_effects = EFFECTS.new()
+	_effects.name = "CombatFeedback"
+	add_child(_effects)
 	get_viewport().size_changed.connect(func():
 		if _camera.enabled:
 			_position_camera(_camera_weight)
@@ -125,12 +131,14 @@ func try_engage(enemy: EnemyShip, closing_speed: float, lane_overlap: bool) -> b
 	_clear_input()
 	_saved_time_scale = Engine.time_scale
 	Engine.time_scale = boarding_time_scale
+	_effects.begin(player_combat, enemy_combat)
 	_set_presentation(true)
 	_show_impact("撞击！")
 	_exchange_timer.start()
 	_decay_timer.start()
 	set_process(true)
 	set_process_input(true)
+	active_changed.emit(true)
 	if log_boarding:
 		print("[接舷] 开始 %s %s" % [enemy.config.display_name, entry_snapshot])
 	return true
@@ -161,8 +169,10 @@ func _ram_exposure(parts: ShipParts) -> float:
 	return 1.0 - ratio * RAM_GUARD
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not _resolve_finished():
+		_effects.advance(minf(delta / maxf(Engine.time_scale, 0.001), 0.05))
+		_position_camera(_camera_weight)
 		_update_ui()
 
 
@@ -175,6 +185,7 @@ func _input(event: InputEvent) -> void:
 		KEY_SPACE:
 			if key.pressed and not key.echo and not _space_down:
 				qte_multiplier = minf(1.5, qte_multiplier + 0.01)
+				_effects.on_qte()
 			_space_down = key.pressed
 		KEY_T:
 			if key.pressed and not key.echo and _flee_timer.is_stopped():
@@ -210,8 +221,7 @@ func _exchange() -> void:
 	var to_enemy := _apply_exchange_damage(enemy.combat, player_damage)
 	if not active or not is_instance_valid(enemy):
 		return
-	DamageFloat.spawn(self, _player.combat.aim_point(), to_player, Color(1.0, 0.45, 0.38))
-	DamageFloat.spawn(self, enemy.combat.aim_point(), to_enemy, Color(1.0, 0.88, 0.5))
+	_effects.on_exchange(to_player, to_enemy)
 	if log_boarding:
 		print("[接舷] 我舰 -%.2f / 敌舰 -%.2f · QTE %.2f · 灯火 ×%.2f · 气焰 ×%.2f" % [
 			to_player, to_enemy, qte_multiplier, lamp_factor, morale_factor])
@@ -296,6 +306,7 @@ func _end_fight(stun_seconds: float, animate_camera: bool = true) -> void:
 	_flee_timer.stop()
 	set_process(false)
 	set_process_input(false)
+	_effects.end()
 	if _player.combat.targetable:
 		_player.unlock_after_boarding()
 	if is_instance_valid(_enemy):
@@ -303,6 +314,7 @@ func _end_fight(stun_seconds: float, animate_camera: bool = true) -> void:
 		_enemy.finish_boarding(stun_seconds)
 	_enemy = null
 	_set_presentation(false, animate_camera)
+	active_changed.emit(false)
 
 
 func _start_cooldown(enemy: EnemyShip) -> void:
@@ -464,7 +476,8 @@ func _position_camera(weight: float) -> void:
 	var zoom := lerpf(coverage, maxf(coverage, camera_zoom), weight)
 	var half_visible := screen / (2.0 * zoom)
 	_camera.zoom = Vector2.ONE * zoom
-	_camera.global_position = _map_bounds.get_center().lerp(_focus, weight).clamp(
+	var center := _map_bounds.get_center().lerp(_focus, weight) + _effects.camera_shake() * weight
+	_camera.global_position = center.clamp(
 		_map_bounds.position + half_visible, _map_bounds.end - half_visible)
 	_camera.force_update_scroll()
 

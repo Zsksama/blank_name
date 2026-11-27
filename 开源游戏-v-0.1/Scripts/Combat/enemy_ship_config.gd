@@ -30,7 +30,9 @@ const MAX_SPEED := 22.0
 @export var min_gap := 144.0
 @export var can_change_lane := false
 @export var lane_change_margin := 180.0
+## 推进时的回摆强度，配合频率换算成沿水线的回摆速度。
 @export var sway_advance := 0.0
+## 停船开火时沿停位线内侧往返的半幅，单位为像素。
 @export var sway_idle := 0.0
 @export var sway_advance_hz := 0.0
 @export var sway_idle_hz := 0.0

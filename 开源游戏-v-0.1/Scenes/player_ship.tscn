@@ -28,7 +28,9 @@ hull_burn_texture = ExtResource("9_burn")
 [node name="Combat" type="Node2D" parent="."]
 script = ExtResource("3_combat")
 
-[node name="Sprite2D" type="Sprite2D" parent="Combat"]
+[node name="Visual" type="Node2D" parent="Combat"]
+
+[node name="Sprite2D" type="Sprite2D" parent="Combat/Visual"]
 texture = ExtResource("2_art")
 
 [node name="Weapon" type="Node2D" parent="Combat"]

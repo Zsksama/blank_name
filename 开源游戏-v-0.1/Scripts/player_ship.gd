@@ -38,7 +38,6 @@ var lane_index: int:
 		return combat.lane_index
 var lane_change_fail_reason := ""
 var lane_offset_y := 0.0
-var wave_offset := 0.0
 var controls_locked := false
 var _lanes: Lanes
 var _switch_remaining := 0.0
@@ -56,7 +55,7 @@ var _boarding_release_frame := -2
 
 
 func _ready() -> void:
-	var sprite := combat.get_node("Sprite2D") as Sprite2D
+	var sprite := combat.visual_sprite()
 	var ship_size := sprite.texture.get_size() * ship_scale
 	combat.configure(damage_profile, ship_size, 1.0)
 	combat.configure_damage_art(sail_torn_texture, sail_ruined_texture, hull_burn_texture, sail_cutout)
@@ -169,7 +168,7 @@ func _apply_lane_pose() -> void:
 		lane_offset_y = recoil_sink * _recoil
 		combat.rotation_degrees = -recoil_pitch * _recoil
 	z_index = _lanes.content_z(draw_lane)
-	global_position.y = _lanes.lane_bottom_y(lane_index) + lane_offset_y + wave_offset
+	global_position.y = _lanes.lane_bottom_y(lane_index) + lane_offset_y
 
 
 func _update_repair(delta: float) -> void:

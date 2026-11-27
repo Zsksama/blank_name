@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://cggt6idsp3k0g" path="res://Scripts/ui/reload_ring.gd" id="10_ring"]
 [ext_resource type="PackedScene" path="res://Scenes/fortress.tscn" id="11_fort"]
 [ext_resource type="Script" path="res://Scripts/Combat/boarding_fight.gd" id="12_boarding"]
+[ext_resource type="Script" path="res://Scripts/sea_surface.gd" id="13_sea"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_v"]
 size = Vector2(8, 720)
@@ -36,6 +37,9 @@ texture = ExtResource("3_land")
 
 [node name="Lanes" type="Node2D" parent="." unique_id=115387262]
 script = ExtResource("5_lanes")
+
+[node name="SeaSurface" type="Node2D" parent="Lanes"]
+script = ExtResource("13_sea")
 
 [node name="CombatConfig" type="Node" parent="." unique_id=1637146987]
 script = ExtResource("8_config")

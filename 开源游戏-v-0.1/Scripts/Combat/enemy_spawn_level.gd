@@ -15,8 +15,13 @@ enum Formation { NONE, SNAKE, BUTTERFLY }
 @export var reserve_required_for_snake := false
 @export_range(0.0, 1.0, 0.01) var formation_chance := 0.4
 @export_range(1, 15) var max_alive := 15
-@export var storm_wave_scale := 1.4
+@export var storm_wave_scale := 1.8
+@export var storm_wave_speed := 1.28
 
 
 func wave_amplitude_scale() -> float:
 	return storm_wave_scale if weather == "storm" else 1.0
+
+
+func wave_speed_scale() -> float:
+	return storm_wave_speed if weather == "storm" else 1.0

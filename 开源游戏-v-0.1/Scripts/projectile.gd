@@ -72,6 +72,8 @@ func _ready() -> void:
 			_sprite.scale *= 0.55
 			_radius *= 0.55
 			puff_scale *= 0.6
+	if lanes != null and visual != Visual.ARROW:
+		lanes.sea.register_projectile(_sprite, lane_index)
 
 
 func _draw() -> void:
@@ -184,7 +186,7 @@ func _resolve_hits(from: Vector2, to: Vector2) -> bool:
 			_stop(point)
 			_explode(point)
 			return true
-		ship.receive_hit(impact.part, ammo, damage)
+		ship.receive_hit(impact.part, ammo, damage, point)
 		if impact.part != ShipParts.Part.SAIL:
 			_stop(point)
 			return true
@@ -214,10 +216,11 @@ func _explode(point: Vector2) -> void:
 			continue
 		for part in BLAST_PARTS:
 			var box := ship.hitbox(part)
-			var distance := point.distance_to(point.clamp(box.position, box.end))
+			var closest := point.clamp(box.position, box.end)
+			var distance := point.distance_to(closest)
 			if distance <= explode_radius:
 				var falloff := lerpf(1.0, 0.5, distance / explode_radius)
-				ship.receive_hit(part, ammo, damage * falloff)
+				ship.receive_hit(part, ammo, damage * falloff, closest)
 		if ship.targetable:
 			var direction := signf(ship.global_position.x - point.x)
 			if is_zero_approx(direction):

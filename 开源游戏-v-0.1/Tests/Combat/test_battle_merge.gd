@@ -78,7 +78,7 @@ func _run() -> void:
 		var prediction := preview.to_global(preview.points[-1])
 		var muzzle: Vector2 = weapon.muzzle_global(0)
 		_expect(preview.to_global(preview.points[0]).distance_to(muzzle) < 0.01 and preview.z_index == player.z_index,
-			"The preview starts at the displayed muzzle and stays beneath the lane water overlay")
+			"The preview starts at the logical muzzle and stays beneath the lane water overlay")
 		var start := player.position
 		weapon.try_fire()
 		var projectile: Projectile = battle.get_node("Projectiles").get_child(0)
@@ -87,12 +87,14 @@ func _run() -> void:
 		_expect(weapon.ammo[0] == 29 and player.position.x < start.x and player.position.y > start.y and player.lane_index == 1,
 			"The shot spends ammo and translates the player in its current lane")
 		var offset_x := player.position.x
-		var splash_matched := false
+		var water_entries: Array[Vector2] = []
+		lanes.water_impact.connect(func(lane: int, point: Vector2):
+			if lane == 1:
+				water_entries.append(point)
+		)
 		for tick in range(70):
 			await physics_frame
-			for splash in get_nodes_in_group("water_splash"):
-				if splash.global_position.distance_to(prediction) < 1.0 and splash.z_index == 15:
-					splash_matched = true
+		var splash_matched := water_entries.any(func(point: Vector2): return point.distance_to(prediction) < 1.0)
 		_expect(splash_matched and not is_instance_valid(projectile), "Water catches the shell on the exact predicted lane line")
 		_expect(player.position.y == start.y and player.position.x == offset_x, "Floating recovers while horizontal recoil persists")
 
@@ -126,7 +128,7 @@ func _run() -> void:
 		"An explosive hit damages nearby parts only in its own lane")
 	_expect(foe.position.x > 800.0 and stacked.position.x < 800.0 and other.position.x == 800.0,
 		"A centered blast pushes overlapping enemies apart and leaves the next lane alone")
-	var sail_overlay: Sprite2D = foe.combat.get_node_or_null("Sprite2D/SailOverlay")
+	var sail_overlay: Sprite2D = foe.combat.visual_sprite().get_node_or_null("SailOverlay")
 	foe.combat.receive_hit(ShipParts.Part.SAIL, ShipParts.Ammo.ANTI_SAIL, 40.0)
 	_expect(sail_overlay != null and sail_overlay.visible, "The E-01 keeps the collaborator's damaged sail art")
 

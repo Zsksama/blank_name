@@ -1,36 +1,22 @@
 class_name Lanes
 extends Node2D
 
+signal water_impact(lane: int, point: Vector2)
+
 @export_range(1, 12, 1) var lane_count: int = 5
 @export var sea_left: float = 60.0
 @export var sea_right: float = 1280.0
 @export var sea_top: float = 144.0
 @export var sea_bottom: float = 720.0
-@export var divider_texture: Texture2D
-@export var water_color := Color(0.18, 0.41, 0.58)
+@export var water_color := Color(0.10, 0.54, 0.73)
 @export_range(0.0, 1.0, 0.01) var water_alpha: float = 0.85:
 	set(value):
 		water_alpha = clampf(value, 0.0, 1.0)
-		for band in _water_bands:
-			band.color = Color(water_color, water_alpha)
+		if sea != null:
+			sea.set_water_alpha(water_alpha)
 
 const FIRST_LANE_Z := 10
 const LANE_Z_STEP := 4
-
-class WaterSplash extends Node2D:
-	var boarding_impact := false
-
-	func _draw() -> void:
-		var strokes := PackedVector2Array([
-			Vector2(-2, 1), Vector2(-8, -6), Vector2(-0.5, 1), Vector2(-2, -12),
-			Vector2(0.75, 1), Vector2(3, -8), Vector2(2, 1), Vector2(8, -4),
-		])
-		draw_multiline(strokes, Color(0.91, 0.97, 1.0, 0.95), 2.0)
-		if boarding_impact:
-			var chips := PackedVector2Array([Vector2(-11, -5), Vector2(-15, -8),
-				Vector2(5, -10), Vector2(7, -13), Vector2(11, -4), Vector2(15, -5)])
-			draw_multiline(chips, Color(0.83, 0.52, 0.24), 2.0)
-
 
 class Blast extends Node2D:
 	var radius: float
@@ -40,8 +26,8 @@ class Blast extends Node2D:
 		draw_arc(Vector2.ZERO, radius, 0.0, TAU, 40, Color(1.0, 0.79, 0.4, 0.85), 3.0, true)
 
 
-var _water_bands: Array[ColorRect] = []
 var _ships: Array[ShipCombat] = []
+@onready var sea: SeaSurface = get_node_or_null("SeaSurface")
 
 
 func _ready() -> void:
@@ -50,62 +36,19 @@ func _ready() -> void:
 
 
 func rebuild() -> void:
-	for child in get_children():
-		remove_child(child)
-		child.queue_free()
-	_water_bands.clear()
-
-	# 地平线下第一条带没有前景物体。在其后的每道，水体盖在本道船只和炮弹之上。
-	_add_water_band(sea_top, lane_bottom_y(0), FIRST_LANE_Z - 1)
-	_add_waterline(0, sea_top, FIRST_LANE_Z, 1.0)
-	for lane in range(lane_count):
-		var y := lane_bottom_y(lane)
-		_add_waterline(lane + 1, y, content_z(lane) - 1, -1.0)
-		if lane + 1 < lane_count:
-			_add_water_band(y, lane_bottom_y(lane + 1), content_z(lane) + 1)
-
-
-func _add_waterline(index: int, y: float, depth: int, offset_y: float) -> void:
-	var line := Line2D.new()
-	line.name = "Waterline%d" % index
-	line.position.y = y
-	line.z_index = depth
-	line.width = 2.0
-	line.default_color = Color(0.70, 0.86, 0.93, 0.8)
-	line.add_point(Vector2(sea_left, offset_y))
-	line.add_point(Vector2(sea_right, offset_y))
-	if divider_texture != null:
-		line.texture = divider_texture
-		line.texture_mode = Line2D.LINE_TEXTURE_STRETCH
-	add_child(line)
-
-
-func _add_water_band(top: float, bottom: float, depth: int) -> void:
-	var band := ColorRect.new()
-	band.name = "FarWater" if depth < FIRST_LANE_Z else "WaterBand%d" % _water_bands.size()
-	band.position = Vector2(sea_left, top)
-	band.size = Vector2(sea_right - sea_left, bottom - top)
-	band.z_index = depth
-	band.color = Color(water_color, water_alpha)
-	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(band)
-	_water_bands.append(band)
+	if sea == null:
+		sea = SeaSurface.new()
+		sea.name = "SeaSurface"
+		add_child(sea)
+	sea.rebuild(self)
 
 
 func splash_at(lane: int, x: float, boarding_impact: bool = false) -> void:
 	if x < sea_left or x > sea_right or lane < 0 or lane >= lane_count:
 		return
-	var splash := WaterSplash.new()
-	splash.name = "WaterSplash"
-	splash.boarding_impact = boarding_impact
-	splash.position = Vector2(x, lane_bottom_y(lane))
-	splash.z_index = content_z(lane)
-	add_child(splash)
-	splash.add_to_group("water_splash")
-	var tween := splash.create_tween().set_parallel().set_ignore_time_scale(boarding_impact)
-	tween.tween_property(splash, "scale", Vector2(1.5, 0.65), 0.4)
-	tween.tween_property(splash, "modulate:a", 0.0, 0.4)
-	tween.chain().tween_callback(splash.queue_free)
+	if not boarding_impact:
+		water_impact.emit(lane, to_global(Vector2(x, lane_bottom_y(lane))))
+	sea.impact(lane, x, boarding_impact)
 
 
 func blast_at(lane: int, point: Vector2, radius: float) -> void:
@@ -158,6 +101,8 @@ func clamp_lane_index(index: int) -> int:
 func register_ship(ship: ShipCombat) -> void:
 	_ships.append(ship)
 	ship.tree_exiting.connect(func(): _ships.erase(ship), CONNECT_ONE_SHOT)
+	sea.register_ship(ship)
+	ship.struck.connect(func(part: ShipParts.Part, point: Vector2): sea.ship_hit(ship.lane_index, point, part))
 
 
 func targets_in_lane(index: int, team: ShipCombat.Team) -> Array[ShipCombat]:
