@@ -2,6 +2,7 @@ class_name PlayerShip
 extends CharacterBody2D
 
 signal sunk(ship: PlayerShip)
+signal lane_change_finished
 
 @export_group("航行")
 @export var move_speed: float = 25.0
@@ -48,6 +49,7 @@ var _recoil_start := 0.0
 var _recoil_elapsed := 0.0
 var _gate_tween: Tween
 var _sink_tween: Tween
+var _boarding_release_frame := -2
 
 @onready var combat: ShipCombat = $Combat
 @onready var _weapon: PlayerWeapon = $Combat/Weapon
@@ -86,20 +88,24 @@ func _physics_process(delta: float) -> void:
 		return
 
 	if not is_switching():
-		if Input.is_action_just_pressed("move_up"):
+		if action_just_pressed(&"move_up"):
 			try_change_lane(lane_index - 1)
-		elif Input.is_action_just_pressed("move_down"):
+		elif action_just_pressed(&"move_down"):
 			try_change_lane(lane_index + 1)
 
 	velocity = Vector2.ZERO
+	var finished_switch := false
 	if is_switching():
 		_switch_remaining = maxf(0.0, _switch_remaining - delta)
 		if is_zero_approx(_switch_remaining):
 			combat.previous_lane = -1
+			finished_switch = true
 	if not is_switching():
 		velocity.x = Input.get_axis("move_left", "move_right") * speed
 		move_and_slide()
 	_apply_lane_pose()
+	if finished_switch:
+		lane_change_finished.emit()
 
 
 func try_change_lane(index: int) -> bool:
@@ -190,6 +196,17 @@ func lock_controls() -> void:
 	if _gate_tween != null:
 		_gate_tween.kill()
 	_weapon.get_node("Preview").hide()
+
+
+func unlock_after_boarding() -> void:
+	controls_locked = false
+	_boarding_release_frame = Engine.get_physics_frames()
+
+
+func action_just_pressed(action: StringName) -> bool:
+	# release 清掉按住状态，输入边沿还可能留在当前或下一物理帧。
+	return Input.is_action_just_pressed(action) and (Engine.get_physics_frames() > _boarding_release_frame + 1
+		or Input.is_action_pressed(action))
 
 
 func sail_from_gate(lane: int, inside_x: float, exit_x: float, duration: float) -> void:

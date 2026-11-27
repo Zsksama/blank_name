@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="EnemySpawnLevel" format=3]
+
+[ext_resource type="Script" path="res://Scripts/Combat/enemy_spawn_level.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+level_id = 4
+display_name = "1558-05-04"
+time_of_day = "night"
+weather = "clear"
+budget = 70
+allowed_types = Array[int]([0, 1, 2])
+must_spawn = Dictionary[int, int]({2: 2})
+formation_pool = Array[int]([1, 2])

@@ -24,7 +24,7 @@ func _run() -> void:
 	var config: EnemyShipConfig = _battle.enemy_config.duplicate()
 	config.attack_range = 0.0
 	_battle.enemy_config = config
-	_battle.first_spawn_delay = 3600.0
+	_battle.spawn_interval_range = Vector2(3600.0, 3600.0)
 	_battle.turret_fire_range = 0.0
 	root.add_child(_battle)
 	current_scene = _battle

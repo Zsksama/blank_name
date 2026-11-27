@@ -158,12 +158,7 @@ func aim_point() -> Vector2:
 func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float) -> void:
 	if not targetable or not parts.apply_hit(part, ammo, damage):
 		return
-	if not targetable:
-		# 部位变化的同步监听可能已经处理了致死伤害。
-		return
-	if parts.is_sunk():
-		targetable = false
-		sunk.emit()
+	if _finish_if_sunk():
 		return
 
 	if _hit_flash != null:
@@ -171,6 +166,25 @@ func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float) -> v
 	_sprite.self_modulate = Color(1.6, 1.3, 1.15)
 	_hit_flash = create_tween()
 	_hit_flash.tween_property(_sprite, "self_modulate", Color.WHITE, 0.15)
+
+
+## 接舷直接扣指定部位，仍使用炮击共用的击沉通知。
+func apply_raw_damage(part: ShipParts.Part, damage: float) -> void:
+	if not targetable or parts.is_sunk() or damage <= 0.0:
+		return
+	parts.set_hp(part, parts.hp(part) - damage)
+	_finish_if_sunk()
+
+
+func _finish_if_sunk() -> bool:
+	# 部位信号的同步监听也可能已经处理了致死伤害。
+	if not targetable:
+		return true
+	if not parts.is_sunk():
+		return false
+	targetable = false
+	sunk.emit()
+	return true
 
 
 func face(heading: float) -> void:

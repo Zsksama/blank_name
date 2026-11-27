@@ -24,7 +24,7 @@ func _run() -> void:
 	_test_nested_fort_hits()
 	_test_next_battle_upgrades()
 	var battle = load("res://Scenes/battle.tscn").instantiate()
-	battle.first_spawn_delay = 9999.0
+	battle.spawn_interval_range = Vector2(9999.0, 9999.0)
 	battle.gate_launch_time = 0.0
 	root.add_child(battle)
 	current_scene = battle
@@ -150,22 +150,24 @@ func _run() -> void:
 		await physics_frame
 	battle._check_boarding(0.0)
 	battle._check_boarding(2.0)
-	_expect(notices == ["倭船"], "Continuous contact with overlapping ships emits a single boarding notice")
+	_expect(notices == ["普通船"], "Continuous contact with overlapping ships emits a single boarding notice")
 	foe.position.x += 200.0
 	battle._check_boarding(2.0)
-	_expect(notices.size() == 1, "Leaving one ship behind does not re-trigger while another is still alongside")
+	_expect(notices.size() == 1, "A second enemy cannot interrupt a boarding fight")
 	stacked.position.x += 200.0
+	foe.combat.receive_hit(ShipParts.Part.HULL, ShipParts.Ammo.SOLID, 1000.0)
+	await process_frame
+	await process_frame
+	stacked.position.x = player.position.x
 	battle._check_boarding(0.0)
-	foe.position.x = player.position.x
-	battle._check_boarding(0.0)
-	_expect(notices.size() == 2, "A new approach can notify again after separation")
+	_expect(notices.size() == 2, "A new contact can notify after the first fight ends")
+	battle.get_node("Boarding").call("cancel")
 
 	battle.turret_lanes.assign([0, 1, 3, 4, 2, 2, 1, 3])
 	battle.build_turrets()
 	slots = battle._turrets.map(func(turret): return turret.lane_index)
 	_expect(slots == [0, 1, 3, 4, 2, 1], "Upgrades permit one water-gate cannon and at most six total")
 
-	battle.kills_to_win = 1
 	var first: EnemyShip = battle.spawn_enemy(4)
 	first.position.x = 700.0
 	var second: EnemyShip = battle.spawn_enemy(4)
@@ -173,15 +175,16 @@ func _run() -> void:
 	for ship in [first, second]:
 		ship.combat.receive_hit(ShipParts.Part.HULL, ShipParts.Ammo.SOLID, 37.0)
 	var sunk_events: Array[EnemyShip] = []
+	var kills_before: int = battle.kills
 	battle.enemy_sunk.connect(func(enemy: EnemyShip): sunk_events.append(enemy))
 	var entry := Vector2(772.0, lanes.lane_bottom_y(4) - 2.0)
 	var blast: Projectile = battle.launch_projectile(entry, Vector2.DOWN * 250.0, 4,
 		ShipCombat.Team.ALLY, 8.0, ShipParts.Ammo.EXPLOSIVE)
 	blast._physics_process(0.04)
-	_expect(not first.combat.targetable and not second.combat.targetable and battle.kills == 2 and sunk_events.size() == 2,
-		"All sinks from the winning blast are counted and emit events")
+	_expect(not first.combat.targetable and not second.combat.targetable and battle.kills == kills_before + 2 and sunk_events.size() == 2,
+		"All sinks from the same blast are counted and emit events")
 	await process_frame
-	_expect(battle.is_over, "The completed blast triggers victory")
+	_expect(not battle.is_over, "A blast does not end the battle while more ships remain")
 
 	print("Merged battle checks: %d/%d passed" % [_checks - _failed, _checks])
 	quit(_failed)
@@ -189,7 +192,7 @@ func _run() -> void:
 
 func _test_fortress_integration() -> void:
 	var battle = load("res://Scenes/battle.tscn").instantiate()
-	battle.first_spawn_delay = 9999.0
+	battle.spawn_interval_range = Vector2(9999.0, 9999.0)
 	root.add_child(battle)
 	current_scene = battle
 	var player: PlayerShip = battle.get_node("PlayerShip")
@@ -271,7 +274,7 @@ func _test_fortress_fire_and_ending() -> void:
 	battle.difficulty = "hard"
 	battle.gate_launch_time = 0.0
 	battle.gate_breach_time = 0.1
-	battle.first_spawn_delay = 9999.0
+	battle.spawn_interval_range = Vector2(9999.0, 9999.0)
 	root.add_child(battle)
 	current_scene = battle
 	battle.set_physics_process(false)
@@ -289,7 +292,7 @@ func _test_fortress_fire_and_ending() -> void:
 	if projectiles.get_child_count() == 1:
 		var shell: Projectile = projectiles.get_child(0)
 		_expect(shell.arc_gravity == 0.0 and shell.lane_index == 0, "The fortress fires a straight shell in its own lane")
-		shell._physics_process(0.4)
+		shell._physics_process(2.5)
 		_expect(nearer.combat.parts.hp(ShipParts.Part.HULL) < 40.0 and farther.combat.parts.hp(ShipParts.Part.HULL) == 40.0
 			and player.combat.parts.hp(ShipParts.Part.HULL) == 100.0 and gate_enemy.combat.parts.hp(ShipParts.Part.HULL) == 40.0,
 			"Fortress fire hits the foremost enemy and passes through the allied ship")

@@ -9,9 +9,16 @@
 [ext_resource type="Texture2D" uid="uid://c6752u1otieqv" path="res://Assets/Art/UI/crosshair.png" id="9_cross"]
 [ext_resource type="Script" uid="uid://cggt6idsp3k0g" path="res://Scripts/ui/reload_ring.gd" id="10_ring"]
 [ext_resource type="PackedScene" path="res://Scenes/fortress.tscn" id="11_fort"]
+[ext_resource type="Script" path="res://Scripts/Combat/boarding_fight.gd" id="12_boarding"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_v"]
 size = Vector2(8, 720)
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_morale_background"]
+bg_color = Color(0.09, 0.1, 0.14, 0.9)
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_morale_fill"]
+bg_color = Color(0.88, 0.48, 0.23, 1)
 
 [node name="Battle" type="Node2D" unique_id=611586165]
 script = ExtResource("7_manager")
@@ -103,3 +110,42 @@ position = Vector2(52, 101)
 script = ExtResource("10_ring")
 radius = 28.0
 thickness = 8.0
+
+[node name="Morale" type="Control" parent="HUD"]
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -73.0
+offset_top = -112.0
+offset_right = -13.0
+offset_bottom = 112.0
+pivot_offset = Vector2(30, 112)
+mouse_filter = 2
+
+[node name="Percent" type="Label" parent="HUD/Morale"]
+offset_right = 60.0
+offset_bottom = 24.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 0.89, 0.7, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.04, 0.04, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 18
+text = "100%"
+horizontal_alignment = 1
+
+[node name="Bar" type="ProgressBar" parent="HUD/Morale"]
+offset_left = 23.0
+offset_top = 28.0
+offset_right = 37.0
+offset_bottom = 224.0
+mouse_filter = 2
+tooltip_text = "敌方气焰"
+theme_override_styles/background = SubResource("StyleBox_morale_background")
+theme_override_styles/fill = SubResource("StyleBox_morale_fill")
+step = 0.0
+value = 100.0
+show_percentage = false
+
+[node name="Boarding" type="Node" parent="."]
+script = ExtResource("12_boarding")

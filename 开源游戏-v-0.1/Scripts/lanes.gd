@@ -18,12 +18,18 @@ const FIRST_LANE_Z := 10
 const LANE_Z_STEP := 4
 
 class WaterSplash extends Node2D:
+	var boarding_impact := false
+
 	func _draw() -> void:
 		var strokes := PackedVector2Array([
 			Vector2(-2, 1), Vector2(-8, -6), Vector2(-0.5, 1), Vector2(-2, -12),
 			Vector2(0.75, 1), Vector2(3, -8), Vector2(2, 1), Vector2(8, -4),
 		])
 		draw_multiline(strokes, Color(0.91, 0.97, 1.0, 0.95), 2.0)
+		if boarding_impact:
+			var chips := PackedVector2Array([Vector2(-11, -5), Vector2(-15, -8),
+				Vector2(5, -10), Vector2(7, -13), Vector2(11, -4), Vector2(15, -5)])
+			draw_multiline(chips, Color(0.83, 0.52, 0.24), 2.0)
 
 
 class Blast extends Node2D:
@@ -86,16 +92,17 @@ func _add_water_band(top: float, bottom: float, depth: int) -> void:
 	_water_bands.append(band)
 
 
-func splash_at(lane: int, x: float) -> void:
+func splash_at(lane: int, x: float, boarding_impact: bool = false) -> void:
 	if x < sea_left or x > sea_right or lane < 0 or lane >= lane_count:
 		return
 	var splash := WaterSplash.new()
 	splash.name = "WaterSplash"
+	splash.boarding_impact = boarding_impact
 	splash.position = Vector2(x, lane_bottom_y(lane))
 	splash.z_index = content_z(lane)
 	add_child(splash)
 	splash.add_to_group("water_splash")
-	var tween := splash.create_tween().set_parallel()
+	var tween := splash.create_tween().set_parallel().set_ignore_time_scale(boarding_impact)
 	tween.tween_property(splash, "scale", Vector2(1.5, 0.65), 0.4)
 	tween.tween_property(splash, "modulate:a", 0.0, 0.4)
 	tween.chain().tween_callback(splash.queue_free)
@@ -178,3 +185,13 @@ func has_space(
 
 func _ship_spacing(width: float, min_gap: float, other: ShipCombat) -> float:
 	return maxf((width + other.size.x) * 0.5, maxf(min_gap, other.min_gap))
+
+
+func friendly_follow_limit(ship: ShipCombat) -> float:
+	var left_limit := -INF
+	for other in _ships:
+		if other.team != ship.team or other.global_position.x >= ship.global_position.x \
+			or not other.occupies_lane(ship.lane_index):
+			continue
+		left_limit = maxf(left_limit, other.global_position.x + _ship_spacing(ship.size.x, ship.min_gap, other))
+	return left_limit

@@ -91,7 +91,7 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	_update_reload(delta)
-	if Input.is_action_just_pressed("fire"):
+	if _ship.action_just_pressed(&"fire"):
 		try_fire()
 
 

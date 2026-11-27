@@ -1,7 +1,7 @@
 class_name ShipDamageProfile
 extends Resource
 
-## 耐久顺序为帆、舰体、炮台、舵、撞角。倍率依次为实心、破帆、爆炸。
+## 耐久顺序为帆、舰体、火器与弓手、舵、撞角。倍率依次为实心、破帆、爆炸。
 @export var max_hp := PackedFloat64Array([80.0, 100.0, 60.0, 10.0, 10.0])
 @export var sail_multipliers := Vector3(0.60, 1.80, 0.70)
 @export var hull_multipliers := Vector3(1.00, 0.25, 0.85)

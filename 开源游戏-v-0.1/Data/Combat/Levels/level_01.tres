@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="EnemySpawnLevel" format=3]
+
+[ext_resource type="Script" path="res://Scripts/Combat/enemy_spawn_level.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+level_id = 1
+display_name = "1558-05-01"
+time_of_day = "day"
+weather = "clear"
+budget = 30
+allowed_types = Array[int]([0])
