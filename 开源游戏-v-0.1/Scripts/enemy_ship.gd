@@ -8,6 +8,8 @@ signal fired(origin: Vector2, velocity: Vector2, lane: int, damage: float)
 enum Action { SINK, FLEE, ATTACK_PLAYER, ATTACK_FORTRESS, ADVANCE, HOLD, ENTER_GATE }
 enum Target { NONE, PLAYER, FORTRESS }
 
+const RETREAT_SPEED_MULTIPLIER := 3.0
+
 
 class WeaponDeck extends Node2D:
 	var size: Vector2
@@ -119,6 +121,8 @@ func step(delta: float, player: ShipCombat, fortress_front: float, fortress_aliv
 	var x := global_position.x
 	# 旧停位线超出新武器射程时，继续推进到射程边缘再停。
 	var stop_x := fortress_front + minf(config.stop_distance, config.attack_range)
+	var fortress_distance := absf(x - fortress_front)
+	var allow_sway := fortress_distance <= config.sway_fortress_range
 	var player_in_range := absf(player.global_position.x - x) <= config.attack_range
 
 	if player.targetable and player.lane_index == lane_index and player_in_range:
@@ -133,18 +137,18 @@ func step(delta: float, player: ShipCombat, fortress_front: float, fortress_aliv
 		elif config.player_stop_distance > 0.0:
 			player_stop_x = maxf(fortress_front + config.size.x * 0.5,
 				player.global_position.x + config.player_stop_distance)
-		_navigate(delta, player_stop_x, closing_for_boarding and x - player.global_position.x <= config.size.x,
-			player.global_position.x - config.attack_range)
+		var near_boarding_contact := closing_for_boarding and x - player.global_position.x <= config.size.x
+		_navigate(delta, player_stop_x, allow_sway and not near_boarding_contact, player.global_position.x - config.attack_range)
 		_aim_and_fire(player.aim_point())
-	elif fortress_alive and absf(x - fortress_front) <= config.attack_range:
+	elif fortress_alive and fortress_distance <= config.attack_range:
 		action = Action.ATTACK_FORTRESS
 		_select_target(Target.FORTRESS)
-		_navigate(delta, stop_x)
+		_navigate(delta, stop_x, allow_sway)
 		_aim_and_fire(Vector2(fortress_front, lanes.lane_center_y(lane_index)))
 	else:
 		_select_target(Target.NONE)
 		combat.face(-1.0)
-		action = Action.ADVANCE if _navigate(delta, stop_x) else Action.HOLD
+		action = Action.ADVANCE if _navigate(delta, stop_x, allow_sway) else Action.HOLD
 
 
 func finish_boarding(stun_seconds: float) -> void:
@@ -184,7 +188,7 @@ func consider_dodge(_projectile: Projectile) -> void:
 	pass
 
 
-func _navigate(delta: float, stop_x: float, straight_for_contact: bool = false, fire_left_limit: float = -INF) -> bool:
+func _navigate(delta: float, stop_x: float, allow_sway: bool, fire_left_limit: float = -INF) -> bool:
 	var speed := _speed()
 	var distance := speed * delta
 	var follow_limit := -INF
@@ -198,12 +202,12 @@ func _navigate(delta: float, stop_x: float, straight_for_contact: bool = false, 
 	var motion := -minf(distance, remaining)
 	if remaining > 0.0:
 		_firing_anchor_x = NAN
-		if not straight_for_contact and config.sway_advance > 0.0 and config.sway_advance_hz > 0.0:
+		if allow_sway and config.sway_advance > 0.0 and config.sway_advance_hz > 0.0:
 			var reverse_speed := _advance_sway(config.sway_advance, config.sway_advance_hz, delta)
 			# 短暂回摆后重新推进，整个过程沿着水线走。
 			var turn := pow(0.5 + 0.5 * sin(_sway_phase), 4.0)
 			motion = maxf(-remaining, lerpf(-speed, reverse_speed, turn) * delta)
-	elif not straight_for_contact and _target != Target.NONE and config.sway_idle > 0.0 and config.sway_idle_hz > 0.0:
+	elif allow_sway and _target != Target.NONE and config.sway_idle > 0.0 and config.sway_idle_hz > 0.0:
 		if is_nan(_firing_anchor_x):
 			_firing_anchor_x = x
 		var left_edge := maxf(follow_limit, maxf(fire_left_limit, lanes.sea_left + config.size.x * 0.5))
@@ -229,7 +233,7 @@ func _advance_sway(amplitude: float, hz: float, delta: float) -> float:
 func _flee(delta: float) -> void:
 	action = Action.FLEE
 	combat.face(1.0)
-	horizontal_speed = _speed()
+	horizontal_speed = _speed() * RETREAT_SPEED_MULTIPLIER
 	global_position.x += horizontal_speed * delta
 	var screen_right := maxf(lanes.sea_right, get_viewport_rect().end.x)
 	if global_position.x >= screen_right + config.size.x * 0.5:
@@ -284,8 +288,10 @@ func _aim_and_fire(point: Vector2) -> void:
 	fired.emit(origin, launch_velocity, lane_index, config.attack_damage)
 
 
-func _on_part_changed(part: ShipParts.Part, _hp: float, _condition: ShipParts.Condition) -> void:
-	if part == ShipParts.Part.CANNON:
+func _on_part_changed(part: ShipParts.Part, hp: float, _condition: ShipParts.Condition) -> void:
+	if part == ShipParts.Part.HULL and hp <= 0.0:
+		combat.finish_if_sunk()
+	elif part == ShipParts.Part.CANNON:
 		_deck.queue_redraw()
 
 

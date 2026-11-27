@@ -17,6 +17,7 @@ func _run() -> void:
 	_test_damage_and_conduction()
 	_test_swept_hits()
 	_test_retreat_and_sinking()
+	_test_all_enemy_hulls_sink()
 	_test_nested_damage()
 	await _test_live_input()
 	await _test_fortress_and_end_flow()
@@ -306,6 +307,35 @@ func _test_retreat_and_sinking() -> void:
 		"Zero hull removes the ship from combat immediately and takes priority over retreat")
 	_check(battle.kills == 1 and events.sunk == 1 and events.retreated == 1,
 		"Only a single sinking and reward event are emitted")
+	battle.free()
+
+
+func _test_all_enemy_hulls_sink() -> void:
+	var battle = _make_battle()
+	var sunk_ships: Array[EnemyShip] = []
+	battle.enemy_sunk.connect(func(ship: EnemyShip): sunk_ships.append(ship))
+	var hull := ShipParts.Part.HULL
+	for config: EnemyShipConfig in EnemySpawner.TYPES.values():
+		var ship: EnemyShip = battle.spawn_enemy(0, config, 550.0)
+		ship.combat.parts.set_hp(hull, 1.0)
+		_check(ship.combat.targetable, "%s stays afloat below the hull destruction threshold" % config.display_name)
+		ship.combat.parts.set_hp(hull, 0.0)
+		ship.combat.receive_hit(hull, ShipParts.Ammo.SOLID, 5.0)
+		_check(not ship.combat.targetable and ship.action == EnemyShip.Action.SINK and sunk_ships.count(ship) == 1,
+			"%s sinks exactly once when its hull HP is set to zero" % config.display_name)
+
+		var boarded: EnemyShip = battle.spawn_enemy(1, config, 550.0)
+		boarded.boarding_locked = true
+		boarded.combat.apply_raw_damage(hull, boarded.combat.parts.max_hp(hull))
+		_check(boarded.action == EnemyShip.Action.SINK and sunk_ships.count(boarded) == 1,
+			"%s sinks at zero hull HP during boarding" % config.display_name)
+
+		var shelled: EnemyShip = battle.spawn_enemy(2, config, 550.0)
+		shelled.combat.parts.set_hp(hull, 1.0)
+		shelled.combat.receive_hit(ShipParts.Part.CANNON, ShipParts.Ammo.SOLID, 10.0)
+		_check(shelled.action == EnemyShip.Action.SINK and sunk_ships.count(shelled) == 1,
+			"%s sinks when a weapons hit depletes the hull" % config.display_name)
+	_check(battle.kills == 9 and battle.enemies_defeated == 9, "Each sinking reaches battle bookkeeping once")
 	battle.free()
 
 

@@ -189,11 +189,25 @@ func _prepare_spawning() -> void:
 	var levels := spawn_levels if not spawn_levels.is_empty() else EnemySpawner.LEVELS
 	var level_index := clampi(_battle_start.battle_id - 1, 0, levels.size() - 1)
 	spawn_level = levels[level_index]
-	_lanes.sea.set_weather(spawn_level.wave_amplitude_scale(), spawn_level.wave_speed_scale())
+	var wave_tint := Color(0.74, 0.85, 1.0) if spawn_level.time_of_day == "night" else Color.WHITE
+	if spawn_level.weather == "storm":
+		wave_tint *= Color(0.82, 0.86, 0.92)
+	_lanes.sea.set_weather(spawn_level.wave_amplitude_scale(), spawn_level.wave_speed_scale(), wave_tint)
 	_spawner = EnemySpawner.new()
 	_spawner.name = "EnemySpawner"
 	add_child(_spawner)
+	_spawner.batch_announced.connect(_on_spawn_batch_announced)
 	_spawner.begin(spawn_level, _battle_start.difficulty, spawn_seed, spawn_interval_range, spawn_sound_path)
+
+
+func _on_spawn_batch_announced(formation: EnemySpawnLevel.Formation, _arrivals: Array[EnemySpawner.Arrival]) -> void:
+	if _alert_tween != null and _alert_tween.is_running():
+		return
+	match formation:
+		EnemySpawnLevel.Formation.SNAKE:
+			_show_alert("长蛇阵 · 同道鱼贯")
+		EnemySpawnLevel.Formation.BUTTERFLY:
+			_show_alert("蝴蝶阵 · 分道来袭")
 
 
 ## 其他流程可暂停刷怪。正式接舷自动保留批次和海螺的剩余时间。

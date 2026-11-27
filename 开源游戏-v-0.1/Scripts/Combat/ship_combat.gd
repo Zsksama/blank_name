@@ -206,7 +206,7 @@ func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float, poin
 	if not targetable or not parts.apply_hit(part, ammo, damage * hit_damage_multiplier):
 		return
 	struck.emit(part, visible_part_position(part) if point == Vector2.INF else point)
-	if _finish_if_sunk():
+	if finish_if_sunk():
 		return
 
 	if _hit_flash != null:
@@ -221,10 +221,10 @@ func apply_raw_damage(part: ShipParts.Part, damage: float) -> void:
 	if not targetable or parts.is_sunk() or damage <= 0.0:
 		return
 	parts.set_hp(part, parts.hp(part) - damage)
-	_finish_if_sunk()
+	finish_if_sunk()
 
 
-func _finish_if_sunk() -> bool:
+func finish_if_sunk() -> bool:
 	# 部位信号的同步监听也可能已经处理了致死伤害。
 	if not targetable:
 		return true

@@ -81,6 +81,8 @@ func _test_water(battle: Node, sea: Node) -> void:
 		"The wave comparison switch leaves a flat water surface")
 	sea.waves_enabled = true
 	_test_reflections(battle, sea, lane, base)
+	_test_lane_change_reflection(player, lanes, sea)
+	_test_wave_detail(sea, lanes)
 	_test_spray_pool(sea, lane, base)
 
 
@@ -102,6 +104,66 @@ func _test_reflections(battle: Node, sea: Node, lane: int, water_y: float) -> vo
 	arrow.free()
 	_check(not sea._sources.has(shot_id), "Spent shots release their reflection registration")
 	sea.reflections_enabled = true
+
+
+func _test_lane_change_reflection(player: PlayerShip, lanes: Lanes, sea: SeaSurface) -> void:
+	var position_before := player.position
+	player.position.x = 500.0
+	sea._process(0.0)
+	var art := player.combat.visual_sprite()
+	var mirror: Sprite2D = sea._sources[art.get_instance_id()].mirror
+	var starting_lane := player.lane_index
+	for destination in [starting_lane - 1, starting_lane]:
+		var source_lane := player.lane_index
+		_check(player.try_change_lane(destination), "The player begins a real lane change")
+		var continuous := true
+		var aligned := true
+		for frame in range(41):
+			if frame > 0:
+				player._physics_process(player.lane_switch_time / 40.0)
+			sea._process(0.0)
+			var mix_amount := clampf(inverse_lerp(lanes.lane_bottom_y(source_lane),
+				lanes.lane_bottom_y(destination), player.position.y), 0.0, 1.0)
+			var art_origin := sea.to_local(art.global_position)
+			var expected_plane := lerpf(sea.surface_y(source_lane, art_origin.x),
+				sea.surface_y(destination, art_origin.x), mix_amount)
+			continuous = continuous and mirror.visible
+			aligned = aligned and absf(0.5 * (mirror.position.y + art_origin.y) - expected_plane) < 0.01
+		_check(continuous and aligned, "The mirror stays visible at the interpolated surface on every switch frame")
+	player.position = position_before
+
+
+func _test_wave_detail(sea: SeaSurface, lanes: Lanes) -> void:
+	var horizon := sea.get_node("WaterLayers/WaterBand0") as Polygon2D
+	var near_water := sea.get_node("WaterLayers/WaterBand4") as Polygon2D
+	var material := horizon.material as ShaderMaterial
+	_check(material != null and near_water.material == material,
+		"The same water material carries ripples from the horizon to the near lanes")
+	if material == null:
+		return
+	var before: float = material.get_shader_parameter(&"water_clock")
+	var tint := Color(0.74, 0.85, 1.0)
+	sea.set_weather(1.8, 1.28, tint)
+	sea.reflections_enabled = false
+	sea._process(0.25)
+	var after: float = material.get_shader_parameter(&"water_clock")
+	_check(is_equal_approx(after - before, 0.32) and material.get_shader_parameter(&"detail_tint") == tint,
+		"Surface details use the weather clock and tint even with reflections disabled")
+	var row_count := sea._profile_image.get_height()
+	var last_sample := sea._profile_image.get_width() - 1
+	var middle := floori(last_sample * 0.5)
+	var x := lerpf(lanes.sea_left, lanes.sea_right, float(middle) / last_sample)
+	var profile_y := sea._profile_image.get_pixel(middle, 3).r
+	_check(row_count == lanes.lane_count + 1 and is_equal_approx(profile_y, sea.to_global(Vector2(x, sea.surface_y(2, x))).y),
+		"The surface detail profile follows the actual waterline with reflections disabled")
+	sea.waves_enabled = false
+	sea._process(0.25)
+	_check(is_zero_approx(material.get_shader_parameter(&"detail_amount")),
+		"Disabling waves hides the animated surface details")
+	sea.set_weather(1.0, 1.0)
+	sea.waves_enabled = true
+	sea.reflections_enabled = true
+	sea._process(0.0)
 
 
 func _test_spray_pool(sea: Node, lane: int, water_y: float) -> void:
@@ -126,11 +188,14 @@ func _test_watchtower(battle: Node, tower: Node) -> void:
 	var heavy: EnemyShip = battle.spawn_enemy(0, HEAVY, 725.0)
 	var fast: EnemyShip = battle.spawn_enemy(1, FAST, 690.0)
 	heavy.horizontal_speed = -10.0
-	fast.horizontal_speed = -22.0
+	fast.horizontal_speed = 0.0
 	await physics_frame
 	await process_frame
 	_check(tower.target == fast and tower.target_part == ShipParts.Part.SAIL,
-		"The fastest horizontal target is locked on its sail")
+		"The closest ship is marked even when a farther ship has higher horizontal speed")
+	heavy.position.x = 670.0
+	tower.refresh_target()
+	_check(tower.target == fast, "A valid target keeps its lock when another ship comes closer")
 	var hull := ShipParts.Part.HULL
 	var before := fast.combat.parts.hp(hull)
 	var hull_box := fast.combat.hitbox(hull)
@@ -148,6 +213,7 @@ func _test_watchtower(battle: Node, tower: Node) -> void:
 	_check(tower.target == fast and tower.marker_color == Color.BLACK,
 		"The destroyed sail turns the marker black without breaking the lock")
 	var player := battle.get_node("PlayerShip") as PlayerShip
+	player.position.x = 960.0
 	var boarder: EnemyShip = battle.spawn_enemy(player.lane_index, null, player.position.x)
 	boarder.horizontal_speed = 0.0
 	var boarding := battle.get_node("Boarding") as BoardingFight

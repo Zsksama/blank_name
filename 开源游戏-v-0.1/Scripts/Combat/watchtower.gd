@@ -53,14 +53,13 @@ func refresh_target() -> void:
 	if is_instance_valid(target) and _is_targetable(target):
 		return
 	var best: EnemyShip
-	var fastest := -1.0
+	var front_x := INF
 	for child in _enemies.get_children():
 		var candidate := child as EnemyShip
 		if not _is_targetable(candidate):
 			continue
-		var speed := absf(candidate.horizontal_speed)
-		if speed > fastest:
-			fastest = speed
+		if candidate.global_position.x < front_x:
+			front_x = candidate.global_position.x
 			best = candidate
 	if is_instance_valid(target):
 		target.combat.hit_damage_multiplier = 1.0

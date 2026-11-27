@@ -3,19 +3,18 @@ extends Node2D
 
 const SPRAY := preload("res://Scripts/sea_spray.gd")
 const REFLECTION := preload("res://Scripts/sea_reflection.gdshader")
+const WATER_DETAIL := preload("res://Scripts/sea_detail.gdshader")
 const POINT_SPACING := 20.0
 const MAX_TILT := 0.085
 const RIPPLE_COUNT := 16
 const RIPPLE_LIFE := 1.05
 const RIPPLE_SPEED := 82.0
 
-static var _default_crest: Texture2D
 static var _default_surface: Texture2D
 
 @export var waves_enabled := true
 @export var reflections_enabled := true
 @export var fade_wave_in_boarding := false
-@export var crest_texture: Texture2D
 @export var surface_texture: Texture2D
 @export_range(0.0, 1.0, 0.01) var reflection_opacity := 0.32
 
@@ -24,7 +23,6 @@ class Waterline:
 	var points := PackedVector2Array()
 	var band_points := PackedVector2Array()
 	var pressure := PackedFloat32Array()
-	var crest: Line2D
 	var band: Polygon2D
 	var spray: SPRAY
 	var sample_height: Callable
@@ -45,6 +43,7 @@ class ReflectionSource:
 	var lane: int
 	var ship: ShipCombat
 	var hidden_sail_uv := Vector4.ZERO
+	var profile_transition := Vector2(0.0, 1.0)
 
 
 var _lanes: Lanes
@@ -54,15 +53,17 @@ var _ripples: Array[Ripple] = []
 var _ripple_cursor := 0
 var _sources: Dictionary[int, ReflectionSource] = {}
 var _ships: Array[ShipCombat] = []
-var _clip_image: Image
-var _clip_texture: ImageTexture
+var _profile_image: Image
+var _profile_texture: ImageTexture
+var _surface_material: ShaderMaterial
 var _reflection_materials: Array[ShaderMaterial] = []
 var _segments: int
 var _step_x: float
 var _clock := 0.0
 var _amplitude_scale := 1.0
 var _speed_scale := 1.0
-var _crest_opacity := 1.0
+var _detail_tint := Color.WHITE
+var _detail_opacity := 1.0
 var _boarding := false
 var _animated := true
 var _mirrors_visible := false
@@ -87,24 +88,22 @@ func rebuild(lanes: Lanes) -> void:
 	var width := maxf(1.0, lanes.sea_right - lanes.sea_left)
 	_segments = maxi(1, roundi(width / POINT_SPACING))
 	_step_x = width / _segments
-	if crest_texture == null and _default_crest == null:
-		_default_crest = _make_crest_texture()
 	if surface_texture == null and _default_surface == null:
 		_default_surface = _make_water_texture()
-	var foam := crest_texture if crest_texture != null else _default_crest
 	var fill := surface_texture if surface_texture != null else _default_surface
 	for row in range(lanes.lane_count + 1):
-		_add_waterline(row, foam, fill)
+		_add_waterline(row, fill)
 	for ripple in _ripples:
 		ripple.age = RIPPLE_LIFE
-	_make_reflection_materials()
+	_make_water_materials()
 	_animated = true
 	_process(0.0)
 
 
-func set_weather(amplitude: float, speed: float) -> void:
+func set_weather(amplitude: float, speed: float, detail_tint: Color = Color.WHITE) -> void:
 	_amplitude_scale = maxf(0.0, amplitude)
 	_speed_scale = maxf(0.0, speed)
+	_detail_tint = detail_tint
 
 
 func set_boarding(active: bool) -> void:
@@ -166,7 +165,7 @@ func ship_hit(lane: int, world_point: Vector2, part: ShipParts.Part) -> void:
 		_rows[lane + 1].spray.debris(to_local(world_point), part)
 
 
-func _add_waterline(index: int, foam: Texture2D, fill: Texture2D) -> void:
+func _add_waterline(index: int, fill: Texture2D) -> void:
 	var row := Waterline.new()
 	var depth := float(index - 1) / maxf(1.0, _lanes.lane_count - 1.0)
 	row.base_y = _lanes.sea_top if index == 0 else _lanes.lane_bottom_y(index - 1)
@@ -183,20 +182,10 @@ func _add_waterline(index: int, foam: Texture2D, fill: Texture2D) -> void:
 	row.band.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	_set_band_tint(row, index, _lanes.water_alpha)
 	_water.add_child(row.band)
-	row.crest = Line2D.new()
-	row.crest.name = "Waterline%d" % index
-	row.crest.z_index = _lanes.content_z(0) - 1 if index == 0 else row.band.z_index + 2
-	row.crest.width = 1.8 if index == 0 else lerpf(4.1, 7.0, depth)
-	row.crest.default_color = Color(0.80, 0.94, 1.0, 0.27 if index == 0 else lerpf(0.58, 0.92, depth))
-	row.crest.texture = foam
-	row.crest.texture_mode = Line2D.LINE_TEXTURE_TILE if foam != null else Line2D.LINE_TEXTURE_NONE
-	row.crest.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	row.crest.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_water.add_child(row.crest)
 	if index > 0:
 		row.spray = SPRAY.new()
 		row.spray.name = "Spray%d" % (index - 1)
-		row.spray.z_index = row.crest.z_index
+		row.spray.z_index = row.band.z_index + 2
 		row.sample_height = _sample_row.bind(index)
 		_water.add_child(row.spray)
 	_rows.append(row)
@@ -229,7 +218,8 @@ func _process(delta: float) -> void:
 			_animated = false
 			_write_waterlines(0.0)
 			_update_geometry()
-			_set_crests_visible(false)
+			_surface_material.set_shader_parameter(&"detail_amount", 0.0)
+			_set_spray_visible(false)
 			_hide_reflections()
 			for ripple in _ripples:
 				ripple.age = RIPPLE_LIFE
@@ -238,25 +228,28 @@ func _process(delta: float) -> void:
 		return
 	if not _animated:
 		_animated = true
-		_set_crests_visible(true)
+		_set_spray_visible(true)
 	_clock += delta * _speed_scale
 	var target_opacity := 0.0 if fade_wave_in_boarding and _boarding else 1.0
-	_crest_opacity = move_toward(_crest_opacity, target_opacity, 6.0 * delta / maxf(Engine.time_scale, 0.001))
+	_detail_opacity = move_toward(_detail_opacity, target_opacity, 6.0 * delta / maxf(Engine.time_scale, 0.001))
 	_update_pressure()
 	_write_waterlines(delta)
 	_update_geometry()
+	_update_wave_profile()
+	_surface_material.set_shader_parameter(&"water_clock", _clock)
+	_surface_material.set_shader_parameter(&"swell_scale", _amplitude_scale)
+	_surface_material.set_shader_parameter(&"detail_amount", _detail_opacity)
+	_surface_material.set_shader_parameter(&"detail_tint", _detail_tint)
 	for ship in _ships:
 		_apply_ship_pose(ship)
 	for row in _rows:
-		row.crest.self_modulate.a = _crest_opacity
 		if row.spray != null:
 			row.spray.advance(delta, row.sample_height)
 	_update_reflections()
 
 
-func _set_crests_visible(value: bool) -> void:
+func _set_spray_visible(value: bool) -> void:
 	for row in _rows:
-		row.crest.visible = value
 		if row.spray != null:
 			row.spray.visible = value
 			if not value:
@@ -351,7 +344,6 @@ func _update_geometry() -> void:
 		for index in range(uv.size()):
 			uv[index] = (uv[index] - texture_origin) * texture_scale
 		row.band.uv = uv
-		row.crest.points = row.points
 
 
 func _ship_anchor(ship: ShipCombat) -> Vector2:
@@ -390,17 +382,34 @@ func _sample_row(x: float, row: int) -> float:
 	return lerpf(points[index].y, points[index + 1].y, sample - index)
 
 
-func _make_reflection_materials() -> void:
-	_clip_image = Image.create_empty(_segments + 1, _lanes.lane_count, false, Image.FORMAT_RGF)
-	_clip_texture = ImageTexture.create_from_image(_clip_image)
-	var water_x := Vector2(to_global(Vector2(_lanes.sea_left, 0.0)).x, to_global(Vector2(_lanes.sea_right, 0.0)).x)
+func _profile_uv(row_index: int) -> float:
+	return (row_index + 0.5) / _rows.size()
+
+
+func _make_water_materials() -> void:
+	_profile_image = Image.create_empty(_segments + 1, _rows.size(), false, Image.FORMAT_RGF)
+	_profile_texture = ImageTexture.create_from_image(_profile_image)
+	var top_left := to_global(Vector2(_lanes.sea_left, _lanes.sea_top))
+	var bottom_right := to_global(Vector2(_lanes.sea_right, _lanes.sea_bottom))
+	_surface_material = ShaderMaterial.new()
+	_surface_material.shader = WATER_DETAIL
+	_surface_material.set_shader_parameter(&"wave_profile", _profile_texture)
+	_surface_material.set_shader_parameter(&"water_origin", top_left)
+	_surface_material.set_shader_parameter(&"water_size", bottom_right - top_left)
+	_surface_material.set_shader_parameter(&"sample_count", float(_segments + 1))
+	for index in range(_rows.size()):
+		var row := _rows[index]
+		row.band.material = _surface_material
+		row.band.set_instance_shader_parameter(&"row_profile", Vector4(
+			_profile_uv(index), to_global(Vector2(0.0, row.base_y)).y, row.amplitude, row.speed))
+	var water_x := Vector2(top_left.x, bottom_right.x)
 	for lane in range(_lanes.lane_count):
 		var material := ShaderMaterial.new()
 		material.shader = REFLECTION
-		material.set_shader_parameter(&"wave_profile", _clip_texture)
+		material.set_shader_parameter(&"wave_profile", _profile_texture)
 		material.set_shader_parameter(&"water_x", water_x)
 		material.set_shader_parameter(&"sample_count", float(_segments + 1))
-		material.set_shader_parameter(&"profile_row", (lane + 0.5) / _lanes.lane_count)
+		material.set_shader_parameter(&"profile_row", _profile_uv(lane + 1))
 		material.set_shader_parameter(&"water_tint", _lanes.water_color)
 		_reflection_materials.append(material)
 
@@ -423,10 +432,15 @@ func _update_reflections() -> void:
 	for source: ReflectionSource in _sources.values():
 		var art := source.art
 		var pose := world_to_surface * art.global_transform
-		var lane := source.lane
-		if source.ship != null:
-			lane = maxi(source.ship.lane_index, source.ship.previous_lane)
+		var ship := source.ship
+		var lane := source.lane if ship == null else ship.lane_index
+		var previous := -1 if ship == null else ship.previous_lane
 		var plane := surface_y(lane, pose.origin.x)
+		var transition := Vector2(0.0, 1.0)
+		if previous >= 0:
+			var blend := _lane_blend(ship, _ship_anchor(ship).y)
+			plane = lerpf(surface_y(previous, pose.origin.x), plane, blend)
+			transition = Vector2(_profile_uv(previous + 1), blend)
 		var in_range := (art.is_visible_in_tree() and art.texture != null
 			and pose.origin.x >= _lanes.sea_left - 80.0 and pose.origin.x <= _lanes.sea_right + 80.0
 			and pose.origin.y >= plane - _lanes.lane_height() - 48.0)
@@ -443,8 +457,11 @@ func _update_reflections() -> void:
 		mirror.flip_h = art.flip_h
 		mirror.flip_v = art.flip_v
 		mirror.modulate = Color(art.modulate, art.modulate.a * reflection_opacity)
-		mirror.z_index = _lanes.content_z(lane) + 2
+		mirror.z_index = _lanes.content_z(maxi(lane, previous)) + 2
 		mirror.material = _reflection_materials[lane]
+		if source.profile_transition != transition:
+			source.profile_transition = transition
+			mirror.set_instance_shader_parameter(&"profile_transition", transition)
 		if source.ship != null and source.hidden_sail_uv != source.ship.hidden_sail_uv:
 			source.hidden_sail_uv = source.ship.hidden_sail_uv
 			mirror.set_instance_shader_parameter(&"hidden_sail_uv", source.hidden_sail_uv)
@@ -452,39 +469,16 @@ func _update_reflections() -> void:
 		mirror.show()
 		has_mirror = true
 	_mirrors_visible = has_mirror
-	if has_mirror:
-		_update_reflection_clip()
 
 
-func _update_reflection_clip() -> void:
+func _update_wave_profile() -> void:
 	var y_origin := global_position.y
-	for lane in range(_lanes.lane_count):
-		var row := lane + 1
+	for row in range(_rows.size()):
+		var points := _rows[row].points
 		for index in range(_segments + 1):
-			_clip_image.set_pixel(index, lane, Color(
-				_rows[row].points[index].y + y_origin, _band_bottom(row, index).y + y_origin, 0.0))
-	_clip_texture.update(_clip_image)
-
-
-static func _make_crest_texture() -> Texture2D:
-	const WIDTH := 256
-	const HEIGHT := 8
-	var foam := Image.create_empty(WIDTH, HEIGHT, false, Image.FORMAT_RGBA8)
-	if foam.is_empty():
-		return null
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 6601
-	for x in range(WIDTH):
-		var p := TAU * x / WIDTH
-		var shine := pow(maxf(0.0, sin(p * 5.0 + sin(p * 2.0) * 1.8)), 4.0)
-		var y := 3 + roundi(sin(p * 3.0) * 0.85)
-		foam.set_pixel(x, y - 1, Color(0.82, 0.95, 1.0, 0.51 * shine))
-		foam.set_pixel(x, y, Color(0.80, 0.95, 1.0, 0.28 + 0.71 * shine))
-		foam.set_pixel(x, y + 1, Color(0.56, 0.86, 0.99, 0.22 + 0.44 * shine))
-		if rng.randf() < 0.085:
-			foam.set_pixel(posmod(x - 1, WIDTH), y + 2, Color(0.74, 0.93, 1.0, 0.29))
-			foam.set_pixel(x, y + 2, Color(0.74, 0.93, 1.0, 0.48))
-	return ImageTexture.create_from_image(foam)
+			_profile_image.set_pixel(index, row, Color(
+				points[index].y + y_origin, _band_bottom(row, index).y + y_origin, 0.0))
+	_profile_texture.update(_profile_image)
 
 
 static func _make_water_texture() -> Texture2D:
@@ -497,7 +491,7 @@ static func _make_water_texture() -> Texture2D:
 		var x := rng.randi_range(0, SIZE - 1)
 		var y := rng.randi_range(0, SIZE - 1)
 		var length := rng.randi_range(5, 36)
-		var light := rng.randf_range(0.018, 0.085)
+		var light := rng.randf_range(0.013, 0.058)
 		for pixel in range(length):
 			var tint := sin(PI * pixel / length) * light
 			fill.set_pixel((x + pixel) % SIZE, y, Color(0.85 + tint, 0.91 + tint, 0.97 + tint * 0.3))

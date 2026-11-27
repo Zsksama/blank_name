@@ -15,6 +15,7 @@ func _initialize() -> void:
 func _run() -> void:
 	_test_level_rosters()
 	_test_enemy_types()
+	_test_retreat_speed()
 	_test_fast_ship_sway()
 	_test_fortress_hit_rate()
 	_test_opening_wave()
@@ -23,6 +24,7 @@ func _run() -> void:
 	_test_formations()
 	_test_required_snake_ends()
 	_test_snake_spacing()
+	_test_butterfly_alert()
 	await _test_victory_after_retreat()
 	print("Enemy spawning checks: %d/%d passed" % [_checks - _failures, _checks])
 	quit(0 if _failures == 0 else 1)
@@ -93,17 +95,39 @@ func _test_enemy_types() -> void:
 	battle.free()
 
 
+func _test_retreat_speed() -> void:
+	var battle = _battle()
+	var player := battle.get_node("PlayerShip") as PlayerShip
+	for config: EnemyShipConfig in EnemySpawner.TYPES.values():
+		var ship: EnemyShip = battle.spawn_enemy(0, config, 850.0)
+		ship.combat.parts.set_hp(ShipParts.Part.SAIL, ship.combat.parts.max_hp(ShipParts.Part.SAIL) * 0.5)
+		ship.step(0.5, player.combat, 60.0, true)
+		var advance := 850.0 - ship.position.x
+		var turn_x := ship.position.x
+		ship.step(0.5, player.combat, 60.0, true, 0.09)
+		var retreat := ship.position.x - turn_x
+		_check(ship.action == EnemyShip.Action.FLEE and advance > 0.0 and is_equal_approx(retreat, 3.0 * advance),
+			"%s flees three times as fast as it advances with a damaged sail" % config.display_name)
+		ship.free()
+	battle.free()
+
+
 func _test_fast_ship_sway() -> void:
 	var battle = _battle()
 	var player := battle.get_node("PlayerShip") as PlayerShip
 	var fast: EnemyShip = battle.spawn_enemy(0, EnemySpawner.TYPES[EnemyShipConfig.Type.FAST], 600.0)
 	fast._sway_phase = 0.0
+	var distant := _measure_sway(fast, player, 180)
+	_check(distant.fastest_right == 0.0 and distant.strongest_weave == 0.0 and is_equal_approx(fast.position.x, 534.0),
+		"The fast ship moves straight at cruise speed before reaching the fortress")
+	fast.position.x = 440.0
+	fast._sway_phase = 0.0
 	var running := _measure_sway(fast, player, 450)
-	var advanced := fast.position.x < 535.0
+	var advanced := fast.position.x < 375.0
 	fast.position.x = 260.0
 	var stationary := _measure_sway(fast, player, 450)
 	_check(advanced and running.fastest_right > 10.0 and running.fastest_left < -15.0,
-		"The fast ship reverses horizontally while making progress toward the fortress")
+		"Near the fortress the fast ship reverses horizontally while making progress")
 	_check(stationary.span > 15.0 and stationary.span < 20.0 and stationary.farthest_x <= 260.01
 		and fast.action == EnemyShip.Action.ATTACK_FORTRESS, "The fast ship sways in a narrower band within firing range")
 	_check(maxf(running.water_gap, stationary.water_gap) < 0.01,
@@ -117,6 +141,7 @@ func _measure_sway(ship: EnemyShip, player: PlayerShip, frames: int) -> Dictiona
 	var low := INF
 	var fastest_left := 0.0
 	var fastest_right := 0.0
+	var strongest_weave := 0.0
 	var water_gap := 0.0
 	var water_y := ship.lanes.lane_bottom_y(ship.lane_index)
 	for frame in range(frames):
@@ -129,9 +154,10 @@ func _measure_sway(ship: EnemyShip, player: PlayerShip, frames: int) -> Dictiona
 		var speed := (x - last.x) * 60.0
 		fastest_left = minf(fastest_left, speed)
 		fastest_right = maxf(fastest_right, speed)
+		strongest_weave = maxf(strongest_weave, ship.weave_strength)
 		water_gap = maxf(water_gap, absf(ship.position.y - water_y))
 	return {"span": high - low, "farthest_x": high, "fastest_left": fastest_left, "fastest_right": fastest_right,
-		"peak_speed": maxf(-fastest_left, fastest_right), "water_gap": water_gap}
+		"peak_speed": maxf(-fastest_left, fastest_right), "water_gap": water_gap, "strongest_weave": strongest_weave}
 
 
 func _test_fortress_hit_rate() -> void:
@@ -333,6 +359,8 @@ func _test_snake_spacing() -> void:
 			follower = ship
 	_check(head != null and follower != null and follower.formation_predecessor == head,
 		"The main battle connects the two ships in the staged snake")
+	_check((battle.get_node("HUD/Alert") as Label).text.contains("长蛇阵"),
+		"The seeded snake announces its formation through the battle HUD")
 	if head != null and follower != null:
 		head.position.x = 650.0
 		follower.position.x = 650.0 + follower.config.min_gap
@@ -343,6 +371,19 @@ func _test_snake_spacing() -> void:
 			smallest_gap = minf(smallest_gap, follower.position.x - head.position.x)
 		_check(smallest_gap >= follower.config.min_gap - 0.01,
 			"The faster follower does not overtake or overlap a slow snake leader")
+	battle.free()
+
+
+func _test_butterfly_alert() -> void:
+	var battle = _battle("", 4, 155830)
+	var alert := battle.get_node("HUD/Alert") as Label
+	for i in range(100):
+		battle._physics_process(0.1)
+	_check(alert.text.is_empty(), "Ordinary batches do not show a formation alert")
+	for i in range(110):
+		battle._physics_process(0.1)
+	_check(alert.text.contains("蝴蝶阵") and alert.modulate.a > 0.0,
+		"The seeded butterfly announces its formation through the battle HUD")
 	battle.free()
 
 
@@ -383,11 +424,11 @@ func _spawner(level: EnemySpawnLevel, fixed_seed: int) -> EnemySpawner:
 	return spawner
 
 
-func _battle(sound_path: String = "res://Assets/Audio/SFX/enemy_spawn.ogg", level_id: int = 1):
+func _battle(sound_path: String = "res://Assets/Audio/SFX/enemy_spawn.ogg", level_id: int = 1, fixed_seed: int = SEED):
 	var battle = BATTLE.instantiate()
 	battle.difficulty = "easy"
 	battle.management_session = MANAGEMENT_SESSION.new("easy", level_id)
-	battle.spawn_seed = SEED
+	battle.spawn_seed = fixed_seed
 	battle.spawn_sound_path = sound_path
 	battle.gate_launch_time = 0.0
 	root.add_child(battle)
