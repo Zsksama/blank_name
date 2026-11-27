@@ -152,6 +152,11 @@ func _flee(delta: float) -> void:
 		queue_free()
 
 
+## 当前横向速度（含部位惩罚），望楼用它选“最快的一艘”。
+func current_speed() -> float:
+	return _speed()
+
+
 func _speed() -> float:
 	return _cruise_speed * combat.parts.speed_multiplier()
 

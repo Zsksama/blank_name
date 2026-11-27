@@ -94,6 +94,7 @@ var _turret_timers: Array[float] = []
 var _spawn_timer := 0.0
 var _boarding_left := 0.0
 var _boarding_contact_active := false
+var _watchtower: Watchtower
 var _boarding: BoardingFight
 var _rng := RandomNumberGenerator.new()
 ## 敌军气焰（M14 占位，接舷胜负会改它）。
@@ -403,8 +404,17 @@ func _setup_boarding() -> void:
 	add_child(_boarding)
 	_boarding.setup(self, _player)
 	_boarding.morale_changed.connect(_on_boarding_morale)
+	_setup_watchtower()
 	_boarding.finished.connect(boarding_finished.emit)
 	set_morale(morale)
+
+
+## M11 望楼（T-505）：始终锁定场上最快的一艘，整船 +50%，准星标出该打哪。
+func _setup_watchtower() -> void:
+	_watchtower = Watchtower.new()
+	_watchtower.name = "Watchtower"
+	add_child(_watchtower)
+	_watchtower.setup(self, _player, _enemies, _boarding)
 
 
 func set_morale(value: float) -> void:

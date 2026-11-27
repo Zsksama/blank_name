@@ -16,6 +16,8 @@ var lane_index := 0
 var previous_lane := -1
 var min_gap := 0.0
 var targetable := true
+## 望楼锁定期间的整船加伤倍率（1.0 = 没被锁）。
+var damage_taken_multiplier := 1.0
 var size: Vector2
 var sprite_faces_left := false
 var muzzle_offset := Vector2(0.54, -0.08)
@@ -161,7 +163,7 @@ func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float) -> v
 	if not targetable:
 		return
 	var hp_before := _total_hp()
-	if not parts.apply_hit(part, ammo, damage):
+	if not parts.apply_hit(part, ammo, damage * damage_taken_multiplier):
 		return
 	_show_damage(part, hp_before - _total_hp())
 	if not targetable:
@@ -184,7 +186,7 @@ func apply_raw_damage(part: ShipParts.Part, amount: float) -> void:
 	if not targetable or amount <= 0.0 or parts.is_sunk():
 		return
 	var hp_before := _total_hp()
-	parts.set_hp(part, parts.hp(part) - amount)
+	parts.set_hp(part, parts.hp(part) - amount * damage_taken_multiplier)
 	_show_damage(part, hp_before - _total_hp())
 	if parts.is_sunk():
 		targetable = false

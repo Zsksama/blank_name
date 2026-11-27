@@ -8,6 +8,9 @@ extends Resource
 @export var size := Vector2(120.0, 56.0)
 @export var tint := Color.WHITE
 @export var sprite_faces_left := false
+## 船种：望楼准星按它决定锁哪个部位（快船锁帆，普通/重船锁火器与弓手）。
+enum ShipClass { FAST, NORMAL, HEAVY }
+@export var ship_class := ShipClass.NORMAL
 ## 船底相对于贴图中心的纵向比例。
 @export var art_keel_ratio: float = 0.5
 @export var sail_cutout := Rect2()
