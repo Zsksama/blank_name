@@ -6,6 +6,7 @@ signal batch_announced(formation: EnemySpawnLevel.Formation, arrivals: Array[Arr
 const MAX_ALIVE := 15
 const MAX_PER_LANE := 2
 const MAX_PER_BATCH := 5
+const MIN_SNAKE_SIZE := 4
 const OPENING_FRACTION := 0.2
 const CONCH_LEAD := 0.65
 const DIFFICULTY_MULTIPLIERS := {"easy": 1.0, "normal": 1.5, "hard": 2.0}
@@ -28,7 +29,6 @@ class Arrival:
 	var lane: int
 	var offset_x: float
 	var leads_snake := false
-	var waits_for_lane := false
 	var keep_entry_spacing := true
 	var predecessor: Arrival
 	var ship: EnemyShip
@@ -52,7 +52,6 @@ var _opening_count := 0
 var _remaining: Array[EnemyShipConfig] = []
 var _snake_escorts: Array[EnemyShipConfig] = []
 var _announced: Array[Arrival] = []
-var _snake_tails: Array[Arrival] = []
 var _formation := EnemySpawnLevel.Formation.NONE
 var _cue: AudioStreamPlayer
 
@@ -102,12 +101,13 @@ func begin(level: EnemySpawnLevel, difficulty: String, fixed_seed: int, interval
 	_opening_count = ceili(enemy_total * OPENING_FRACTION)
 	_remaining.assign(purchased)
 	_snake_escorts.clear()
-	if level.reserve_required_for_snake and level.formation_pool.has(EnemySpawnLevel.Formation.SNAKE):
-		_snake_escorts.assign(required)
+	if level.reserve_required_for_snake and level.formation_pool.has(EnemySpawnLevel.Formation.SNAKE) \
+		and required.size() >= 2 and enemy_total >= MIN_SNAKE_SIZE and level.max_alive >= MIN_SNAKE_SIZE:
+		_snake_escorts.assign(required.slice(0, 2))
+		_remaining.append_array(required.slice(2))
 	else:
 		_remaining.append_array(required)
 	_announced.clear()
-	_snake_tails.clear()
 	_time_to_entry = 0.0
 	_time_to_batch = _next_interval()
 	print("[M14] 第 %d 关 · %s · 种子 %d · 预算 %d × %.1f = %.1f · 余额 %.1f · 共 %d 艘 · 必出 %s · 购入 %s" % [
@@ -124,25 +124,16 @@ func advance(delta: float, occupied: PackedInt32Array, suspended: bool) -> Array
 
 	if not _announced.is_empty():
 		_time_to_entry -= delta
-		if _time_to_entry <= 0.0:
+		var is_snake := _formation == EnemySpawnLevel.Formation.SNAKE
+		# 长蛇阵整队使用一条空道，预告后也要重新核对入场容量。
+		var room_for_batch := not is_snake or (occupied[_announced[0].lane] == 0 and _room(occupied) >= _announced.size())
+		if _time_to_entry <= 0.0 and room_for_batch:
 			for arrival in _announced:
-				if arrival.waits_for_lane:
-					_snake_tails.append(arrival)
-				elif _can_enter(arrival.lane, occupied):
+				if is_snake or _can_enter(arrival.lane, occupied):
 					_enter(arrival, occupied, entering)
 				else:
 					_remaining.append(arrival.config)
 			_announced.clear()
-
-	var tail_index := 0
-	while tail_index < _snake_tails.size():
-		var tail := _snake_tails[tail_index]
-		if _can_enter(tail.lane, occupied):
-			_snake_tails.remove_at(tail_index)
-			_enter(tail, occupied, entering)
-			print("[M14] 长蛇阵尾船入场 · 第 %d 道 · %s" % [tail.lane + 1, tail.config.display_name])
-		else:
-			tail_index += 1
 
 	if _pool_size() > 0:
 		_time_to_batch -= delta
@@ -159,7 +150,7 @@ func advance(delta: float, occupied: PackedInt32Array, suspended: bool) -> Array
 
 
 func is_exhausted() -> bool:
-	return _pool_size() == 0 and _announced.is_empty() and _snake_tails.is_empty()
+	return _pool_size() == 0 and _announced.is_empty()
 
 
 func _select_batch(occupied: PackedInt32Array) -> Array[Arrival]:
@@ -180,27 +171,27 @@ func _select_batch(occupied: PackedInt32Array) -> Array[Arrival]:
 	if slots.is_empty():
 		return []
 
-	# 第 2 关的两艘必出普通船始终担任头尾，直到有可编队的航道。
-	if _remaining.is_empty() and _snake_escorts.size() == 2:
-		if room < 2 or empty_lanes.is_empty():
-			return []
-		_formation = EnemySpawnLevel.Formation.SNAKE
-		return _snake(empty_lanes[_rng.randi_range(0, empty_lanes.size() - 1)])
+	var snake_limit := mini(MAX_PER_BATCH, mini(room, _pool_size()))
+	var can_queue_snake := snake_limit >= MIN_SNAKE_SIZE and not empty_lanes.is_empty()
+	var available := _remaining.size()
+	if not _snake_escorts.is_empty():
+		# 为预留的头尾留足中间船，随机抽取结束后仍可成阵。
+		available -= MIN_SNAKE_SIZE - _snake_escorts.size()
+		if available == 0:
+			return _snake(empty_lanes, snake_limit) if can_queue_snake else []
 
 	if not _level.formation_pool.is_empty() and _rng.randf() < _level.formation_chance:
 		var pattern := _level.formation_pool[_rng.randi_range(0, _level.formation_pool.size() - 1)]
 		match pattern:
 			EnemySpawnLevel.Formation.SNAKE:
-				if not _in_opening() and room >= 2 and _pool_size() >= 2 and not empty_lanes.is_empty():
-					_formation = pattern
-					return _snake(empty_lanes[_rng.randi_range(0, empty_lanes.size() - 1)])
+				if not _in_opening() and can_queue_snake:
+					return _snake(empty_lanes, snake_limit)
 			EnemySpawnLevel.Formation.BUTTERFLY:
 				var count := mini(occupied.size(), MAX_PER_BATCH)
-				if count >= 2 and mini(room, mini(_pool_size(), open_lanes.size())) >= count:
+				if count >= 2 and mini(room, mini(available, open_lanes.size())) >= count:
 					_formation = pattern
 					return _spread(open_lanes, count, false)
 
-	var available := _remaining.size() if not _remaining.is_empty() else _snake_escorts.size()
 	var batch_limit := mini(MAX_PER_BATCH, mini(available, mini(room, slots.size())))
 	return _spread(slots, _rng.randi_range(1, batch_limit))
 
@@ -215,19 +206,21 @@ func _spread(slots: Array[int], count: int, keep_entry_spacing: bool = true) -> 
 	return batch
 
 
-func _snake(lane: int) -> Array[Arrival]:
-	var count := _rng.randi_range(2, mini(3, _pool_size()))
+func _snake(empty_lanes: Array[int], max_count: int) -> Array[Arrival]:
+	_formation = EnemySpawnLevel.Formation.SNAKE
+	var lane := empty_lanes[_rng.randi_range(0, empty_lanes.size() - 1)]
+	var count := _rng.randi_range(MIN_SNAKE_SIZE, max_count)
 	var head := Arrival.new(_take_snake_end(), lane, -20.0)
 	head.leads_snake = true
 	var tail := Arrival.new(_take_snake_end(), lane)
-	if count == 2:
-		tail.predecessor = head
-		return [head, tail]
-	var middle := Arrival.new(_take(true, false), lane)
-	middle.predecessor = head
-	tail.predecessor = middle
-	tail.waits_for_lane = true
-	return [head, middle, tail]
+	var column: Array[Arrival] = [head]
+	for i in range(count - 2):
+		var member := Arrival.new(_take(true, false), lane)
+		member.predecessor = column.back()
+		column.append(member)
+	tail.predecessor = column.back()
+	column.append(tail)
+	return column
 
 
 func _take_snake_end() -> EnemyShipConfig:
@@ -237,13 +230,12 @@ func _take_snake_end() -> EnemyShipConfig:
 
 
 func _take(cheapest: bool, strongest: bool) -> EnemyShipConfig:
-	var pool := _remaining if not _remaining.is_empty() else _snake_escorts
-	var index := _rng.randi_range(0, pool.size() - 1)
+	var index := _rng.randi_range(0, _remaining.size() - 1)
 	if cheapest or strongest:
-		for i in range(pool.size()):
-			if (cheapest and pool[i].cost < pool[index].cost) or (strongest and pool[i].cost > pool[index].cost):
+		for i in range(_remaining.size()):
+			if (cheapest and _remaining[i].cost < _remaining[index].cost) or (strongest and _remaining[i].cost > _remaining[index].cost):
 				index = i
-	return pool.pop_at(index)
+	return _remaining.pop_at(index)
 
 
 func _in_opening() -> bool:
@@ -278,8 +270,7 @@ func _log_batch() -> void:
 	var formation_name: String = ["普通", "长蛇阵", "蝴蝶阵"][_formation]
 	var entries := PackedStringArray()
 	for arrival in _announced:
-		var staging := "（等空位）" if arrival.waits_for_lane else ""
-		entries.append("%d 道 %s%s" % [arrival.lane + 1, arrival.config.display_name, staging])
+		entries.append("%d 道 %s" % [arrival.lane + 1, arrival.config.display_name])
 	print("[M14] 批次 · %s · %s" % [formation_name, "、".join(entries)])
 
 

@@ -23,6 +23,7 @@ func _run() -> void:
 	_test_capacity()
 	_test_formations()
 	_test_required_snake_ends()
+	_test_snake_limits()
 	_test_snake_spacing()
 	_test_butterfly_alert()
 	await _test_victory_after_retreat()
@@ -299,31 +300,41 @@ func _test_formations() -> void:
 
 	var snake := EnemySpawner.LEVELS[1].duplicate() as EnemySpawnLevel
 	snake.formation_chance = 1.0
+	snake.max_alive = 5
 	spawner = _spawner(snake, SEED)
 	var announced: Array[EnemySpawner.Arrival] = []
 	spawner.batch_announced.connect(func(_kind, arrivals): announced.assign(arrivals))
-	var tested_tail := false
+	var saw_snake := false
 	for i in range(8):
 		var occupied := PackedInt32Array([0, 0, 0, 0, 0])
 		announced.clear()
 		spawner.advance(6.0, occupied, false)
-		var entering := spawner.advance(0.66, occupied, false)
-		if announced.size() != 3 or not announced[0].leads_snake:
+		if announced.is_empty() or not announced[0].leads_snake:
+			spawner.advance(0.66, occupied, false)
 			continue
-		tested_tail = true
+		saw_snake = true
 		var head := announced[0]
-		var middle := announced[1]
-		var tail := announced[2]
-		_check(head.config.cost == 5 and middle.config.cost == 3 and tail.config.cost == 5,
+		var tail := announced[announced.size() - 1]
+		_check(announced.size() >= 4 and announced.size() <= 5, "A snake announces four or five ships together")
+		_check(head.config.cost == 5 and tail.config.cost == 5 and announced.slice(1, -1).all(
+			func(arrival: EnemySpawner.Arrival): return arrival.config.cost == 3),
 			"The long snake places the two required normal ships at the ends")
-		_check(head.lane == middle.lane and middle.lane == tail.lane and entering.size() == 2,
-			"The snake initially admits only two ships to its lane")
-		occupied[head.lane] = 2
-		_check(spawner.advance(0.1, occupied, false).is_empty(), "The tail waits when its lane is full")
+		var chain := true
+		for index in range(1, announced.size()):
+			chain = chain and announced[index].lane == head.lane and announced[index].predecessor == announced[index - 1]
+		_check(chain, "All ships queue behind the preceding ship on the same lane")
 		occupied[head.lane] = 1
-		_check(spawner.advance(0.1, occupied, false) == [tail], "The tail enters the same lane once it has room")
+		_check(spawner.advance(0.66, occupied, false).is_empty(), "A snake waits together if its lane fills after the cue")
+		occupied[head.lane] = 0
+		var other_lane := (head.lane + 1) % occupied.size()
+		occupied[other_lane] = 2
+		_check(spawner.advance(0.1, occupied, false).is_empty(), "A snake waits together if world capacity shrinks after the cue")
+		occupied[other_lane] = 0
+		var entering := spawner.advance(0.1, occupied, false)
+		_check(entering == announced and occupied[head.lane] == announced.size(),
+			"The full announced batch enters the same lane in a single tick when space returns")
 		break
-	_check(tested_tail, "The fixed seed exercises a three-ship snake")
+	_check(saw_snake, "The fixed seed exercises the long snake")
 	spawner.free()
 
 
@@ -338,39 +349,70 @@ func _test_required_snake_ends() -> void:
 		last_batch = spawner.advance(0.66, occupied, false)
 		if spawner.is_exhausted():
 			break
-	_check(last_batch.size() == 2 and last_batch[0].leads_snake and last_batch[0].lane == last_batch[1].lane
-		and last_batch.all(func(arrival): return arrival.config.enemy_type == EnemyShipConfig.Type.NORMAL),
-		"The last two reserved ships still form a snake if every chance roll failed")
+	_check(last_batch.size() == 4 and last_batch[0].leads_snake
+		and last_batch[0].config.enemy_type == EnemyShipConfig.Type.NORMAL
+		and last_batch[3].config.enemy_type == EnemyShipConfig.Type.NORMAL
+		and last_batch.all(func(arrival): return arrival.lane == last_batch[0].lane),
+		"The required normal ships still lead and cap a full snake when every chance roll failed")
 	spawner.free()
 
 
+func _test_snake_limits() -> void:
+	for limits: Vector2i in [Vector2i(0, 15), Vector2i(45, 3)]:
+		var level := EnemySpawner.LEVELS[1].duplicate() as EnemySpawnLevel
+		level.budget = limits.x
+		level.max_alive = limits.y
+		level.formation_chance = 1.0
+		var spawner := _spawner(level, SEED)
+		var entered := 0
+		var only_plain := true
+		for i in range(20):
+			var occupied := PackedInt32Array([0, 0, 0, 0, 0])
+			spawner.advance(6.0, occupied, false)
+			var arrivals := spawner.advance(0.66, occupied, false)
+			entered += arrivals.size()
+			only_plain = only_plain and arrivals.size() <= limits.y and arrivals.all(func(arrival): return not arrival.leads_snake)
+			if spawner.is_exhausted():
+				break
+		_check(spawner.is_exhausted() and entered == spawner.enemy_total and only_plain,
+			"A level without room or ships for a full snake still dispatches its entire roster")
+		spawner.free()
+
+
 func _test_snake_spacing() -> void:
-	var battle = _battle("res://Assets/Audio/SFX/enemy_spawn.ogg", 2)
-	var player := battle.get_node("PlayerShip") as PlayerShip
-	var enemies := battle.get_node("Enemies") as Node2D
-	for i in range(245):
+	var battle = _battle("res://Assets/Audio/SFX/enemy_spawn.ogg", 2, SEED, "normal")
+	var spawner := battle.get_node("EnemySpawner") as EnemySpawner
+	var lanes := battle.get_node("Lanes") as Lanes
+	var alert := battle.get_node("HUD/Alert") as Label
+	var snake: Array[EnemySpawner.Arrival] = []
+	spawner.batch_announced.connect(func(kind, arrivals):
+		if kind == EnemySpawnLevel.Formation.SNAKE and snake.is_empty():
+			snake.assign(arrivals)
+	)
+	var in_view := false
+	var stays_in_line := true
+	var showed_cue := false
+	for tick in range(800):
 		battle._physics_process(0.1)
-	var head: EnemyShip
-	var follower: EnemyShip
-	for ship: EnemyShip in enemies.get_children():
-		if ship.formation_leader:
-			head = ship
-		if is_instance_valid(ship.formation_predecessor):
-			follower = ship
-	_check(head != null and follower != null and follower.formation_predecessor == head,
-		"The main battle connects the two ships in the staged snake")
-	_check((battle.get_node("HUD/Alert") as Label).text.contains("长蛇阵"),
-		"The seeded snake announces its formation through the battle HUD")
-	if head != null and follower != null:
-		head.position.x = 650.0
-		follower.position.x = 650.0 + follower.config.min_gap
-		var smallest_gap := INF
-		for i in range(120):
-			head.step(0.1, player.combat, 60.0, true)
-			follower.step(0.1, player.combat, 60.0, true)
-			smallest_gap = minf(smallest_gap, follower.position.x - head.position.x)
-		_check(smallest_gap >= follower.config.min_gap - 0.01,
-			"The faster follower does not overtake or overlap a slow snake leader")
+		showed_cue = showed_cue or (alert.text.contains("长蛇阵") and alert.modulate.a > 0.0)
+		if snake.is_empty() or not snake.all(func(arrival):
+			return is_instance_valid(arrival.ship) and arrival.ship.combat.targetable):
+			continue
+		var head := snake[0].ship
+		for index in range(1, snake.size()):
+			var previous := snake[index - 1].ship
+			var ship := snake[index].ship
+			var gap := ship.global_position.x - previous.global_position.x
+			stays_in_line = stays_in_line and ship.formation_predecessor == previous \
+				and ship.lane_index == head.lane_index and gap >= 143.99
+		var tail := snake[snake.size() - 1].ship
+		if tail.global_position.x + tail.config.size.x * 0.5 <= lanes.sea_right:
+			in_view = true
+			break
+	_check(snake.size() >= 4 and snake.size() <= 5 and in_view,
+		"The U-06 seed brings at least four same-batch ships on screen together")
+	_check(in_view and stays_in_line, "The same-lane ships stay ordered and separated during the whole approach")
+	_check(showed_cue, "The seeded snake announces its formation through the battle HUD")
 	battle.free()
 
 
@@ -424,10 +466,11 @@ func _spawner(level: EnemySpawnLevel, fixed_seed: int) -> EnemySpawner:
 	return spawner
 
 
-func _battle(sound_path: String = "res://Assets/Audio/SFX/enemy_spawn.ogg", level_id: int = 1, fixed_seed: int = SEED):
+func _battle(sound_path: String = "res://Assets/Audio/SFX/enemy_spawn.ogg", level_id: int = 1,
+		fixed_seed: int = SEED, difficulty: String = "easy"):
 	var battle = BATTLE.instantiate()
-	battle.difficulty = "easy"
-	battle.management_session = MANAGEMENT_SESSION.new("easy", level_id)
+	battle.difficulty = difficulty
+	battle.management_session = MANAGEMENT_SESSION.new(difficulty, level_id)
 	battle.spawn_seed = fixed_seed
 	battle.spawn_sound_path = sound_path
 	battle.gate_launch_time = 0.0
