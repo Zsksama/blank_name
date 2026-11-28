@@ -17,6 +17,7 @@ func _run() -> void:
 	_test_damage_and_conduction()
 	_test_swept_hits()
 	_test_retreat_and_sinking()
+	_test_all_enemy_hulls_sink()
 	_test_nested_damage()
 	await _test_live_input()
 	await _test_fortress_and_end_flow()
@@ -39,19 +40,18 @@ func _test_template_and_overlap() -> void:
 		ships.append(ship)
 		speeds.append(ship._speed())
 
-	for tick in range(560):
+	for tick in range(720):
 		battle._physics_process(0.1)
 
 	_check(ships[0].config.id == &"E-01", "The normal spawn entry loads the E-01 template")
-	_check(float(speeds.min()) >= 18.0 and float(speeds.max()) <= player.move_speed and speeds.min() != speeds.max(),
-		"Each ship has its own speed variation and stays below the player's cruising speed")
+	_check(float(speeds.min()) == 16.0 and float(speeds.max()) == 16.0,
+		"Normal ships use the configured 16 px/s cruising speed")
 	for ship in ships:
-		_check(ship.position.x >= 379.99 and ship.position.x <= 404.01,
-			"Every enemy can reach the fortress and maneuver in the shared stopping area")
+		_close(ship.position.x, 260.0, "Every enemy reaches the arrow range and stops")
 	_close(battle.fortress_hp, 400.0, "Advancing and reaching the stop line do not damage the fortress")
 	_check(not ships[0].try_change_lane(0), "E-01 disables explicit lane changes by default")
 
-	player.position.x = 380.0
+	player.position.x = 260.0
 	_check(player.try_change_lane(1) and player.lane_change_fail_reason.is_empty(),
 		"The player can enter an occupied lane")
 
@@ -60,12 +60,12 @@ func _test_template_and_overlap() -> void:
 	alternate.can_change_lane = true
 	battle.enemy_config = alternate
 	var faster: EnemyShip = battle.spawn_enemy(0)
-	faster.position.x = 450.0
+	faster.position.x = 330.0
 	_check(not faster.try_change_lane(1) and faster.lane_change_fail_reason == "有人",
 		"An enabled enemy lane change reports occupied space")
 	faster.position.x = 700.0
 	battle._physics_process(0.5)
-	_close(faster.position.x, 687.5, "The alternate resource is also bounded by the player's speed")
+	_close(faster.position.x, 689.0, "The alternate resource is also bounded by the enemy speed cap")
 	_check(faster.try_change_lane(3) and faster.lane_index == 3,
 		"The same enemy scene can accept an open lane with an alternate template")
 	battle.free()
@@ -75,20 +75,20 @@ func _test_targets_and_recoil() -> void:
 	var battle = _make_battle()
 	var player: PlayerShip = battle.get_node("PlayerShip")
 	var enemy: EnemyShip = battle.spawn_enemy(2)
-	var sprite := enemy.combat.get_node("Sprite2D") as Sprite2D
+	var sprite := enemy.combat.visual_sprite()
 	_check(sprite.flip_h, "The new E-01 art is mirrored to face the fortress")
 	battle._physics_process(0.2)
 	_check(enemy.action == EnemyShip.Action.ADVANCE and _shots(battle).is_empty(),
 		"An out-of-range enemy advances without firing")
 
-	enemy.position.x = 435.0
-	player.position.x = 220.0
+	enemy.position.x = 260.0
+	player.position.x = 140.0
 	var origin := enemy.combat.muzzle_position(-1.0)
 	var target := player.combat.aim_point()
 	battle._physics_process(0.1)
 	_check(enemy.action == EnemyShip.Action.ATTACK_PLAYER and _shots(battle).is_empty(),
 		"A same-lane player takes priority over the fortress and starts the target delay")
-	_close(enemy.position.x, 435.0, "Acquiring the player stops forward movement")
+	_close(enemy.position.x, 260.0, "Acquiring the player stops forward movement")
 	battle._physics_process(0.29)
 	_check(_shots(battle).is_empty(), "An enemy cannot fire before the full target delay")
 	battle._physics_process(0.02)
@@ -99,34 +99,33 @@ func _test_targets_and_recoil() -> void:
 		return
 	var ball := shots[0]
 	_check(ball.team == ShipCombat.Team.ENEMY and ball.lane_index == 2, "Enemy fire preserves its launch lane and team")
-	_close(ball.damage, 8.0, "E-01 uses the damage from its resource")
+	_close(ball.damage, 4.0, "E-01 uses the arrow damage from its resource")
 	_close(ball.velocity.length(), 850.0, "The enemy aims with its configured launch speed")
 	var flight_time := (target.x - origin.x) / ball.velocity.x
 	var point_at_target := origin + ball.velocity * flight_time + Vector2(0, 0.5 * ball.arc_gravity * flight_time ** 2)
 	_check(point_at_target.distance_to(target) < 0.01, "The launch aims at the player's current point")
-	_check(ball.global_position.distance_to(origin) < 0.01, "The shell originates at the displayed muzzle")
-	_check(enemy.combat.muzzle_position(-1.0).distance_to(origin) > 5.0, "Recoil moves the displayed muzzle")
-	_check(enemy.lane_index == 2 and enemy.position.is_equal_approx(Vector2(435.0, 489.6)),
-		"Recoil leaves the logical lane and occupancy anchor in place")
+	_check(ball.global_position.distance_to(origin) < 0.01, "The arrow originates at the displayed weapons deck")
+	_check(enemy.combat.muzzle_position(-1.0).distance_to(origin) < 0.01, "Arrows leave the deck without cannon recoil")
+	_check(enemy.lane_index == 2 and enemy.position.is_equal_approx(Vector2(260.0, 489.6)),
+		"Shooting an arrow leaves the logical lane and occupancy anchor in place")
 
 	_check(player.try_change_lane(1), "The player can leave for an open lane")
 	battle._physics_process(0.2)
-	_check(enemy.action == EnemyShip.Action.ATTACK_FORTRESS and enemy.position.x < 435.0,
-		"A player leaving the lane immediately switches the target to the fortress and resumes movement")
+	_check(enemy.action == EnemyShip.Action.ATTACK_FORTRESS and enemy.position.x == 260.0,
+		"A player leaving the lane immediately switches to the fortress within range")
 	_check(_shots(battle).size() == 1, "Switching targets preserves the existing reload")
 	battle._physics_process(2.7)
 	_check(_shots(battle).size() == 1, "A new target cannot bypass the full reload")
 	battle._physics_process(0.12)
 	_check(_shots(battle).size() == 2, "The enemy fires at the fortress when both timers clear")
-	_check(enemy.position.x >= 379.99 and enemy.position.x <= 404.01,
-		"The attacker reaches the stop line and stays within the configured maneuver area")
+	_close(enemy.position.x, 260.0, "The attacker holds the new firing line")
 	battle.free()
 
 	battle = _make_battle()
 	player = battle.get_node("PlayerShip")
 	enemy = battle.spawn_enemy(2)
-	enemy.position.x = 435.0
-	player.position.x = 220.0
+	enemy.position.x = 260.0
+	player.position.x = 140.0
 	battle._physics_process(0.1)
 	_check(player.try_change_lane(1), "A reachable player can leave before the first shot")
 	battle._physics_process(0.28)
@@ -139,9 +138,9 @@ func _test_targets_and_recoil() -> void:
 	battle = _make_battle()
 	player = battle.get_node("PlayerShip")
 	enemy = battle.spawn_enemy(2)
-	sprite = enemy.combat.get_node("Sprite2D")
+	sprite = enemy.combat.visual_sprite()
 	enemy.position.x = 730.0
-	player.position.x = 950.0
+	player.position.x = 910.0
 	battle._physics_process(0.1)
 	_check(not sprite.flip_h, "A player behind the enemy turns its cannon toward the right")
 	player.position.x = 1250.0
@@ -171,7 +170,7 @@ func _test_damage_and_conduction() -> void:
 	_check(parts.condition(ShipParts.Part.HULL) == ShipParts.Condition.DAMAGED,
 		"The 75% threshold is inclusive")
 	_close(parts.hp(ShipParts.Part.RUDDER), 10.0, "A roll above the hull-to-rudder chance does not conduct")
-	_close(parts.hp(ShipParts.Part.RAM), 10.0, "A roll above the hull-to-ram chance does not conduct")
+	_close(parts.hp(ShipParts.Part.RAM), 20.0, "A roll above the hull-to-ram chance does not conduct")
 	enemy.combat.receive_hit(ShipParts.Part.HULL, ShipParts.Ammo.SOLID, 26.0)
 	_check(parts.condition(ShipParts.Part.HULL) == ShipParts.Condition.DESTROYED and enemy.combat.targetable,
 		"At exactly 10% the hull is destroyed but still afloat")
@@ -182,14 +181,14 @@ func _test_damage_and_conduction() -> void:
 	config.damage_profile.cannon_conduction_chance = Vector2(1.0, 0.0)
 	battle.enemy_config = config
 	var third: EnemyShip = battle.spawn_enemy(1)
-	third.position.x = 440.0
+	third.position.x = 250.0
 	third.combat.parts.rng.seed = 0
 	third.combat.receive_hit(ShipParts.Part.CANNON, ShipParts.Ammo.EXPLOSIVE, 20.0)
 	parts = third.combat.parts
 	_close(parts.hp(ShipParts.Part.CANNON), 1.0, "Explosive ammo applies the cannon multiplier")
 	_close(parts.hp(ShipParts.Part.HULL), 30.5, "A cannon hit adds half its damage to the hull once")
 	_close(parts.hp(ShipParts.Part.RUDDER), 4.3, "A successful cannon conduction applies 30% of its main damage")
-	_close(parts.hp(ShipParts.Part.RAM), 10.0, "Cannon companion damage does not recursively conduct from the hull")
+	_close(parts.hp(ShipParts.Part.RAM), 20.0, "Weapons companion damage does not recursively conduct from the hull")
 	battle._physics_process(0.1)
 	battle._physics_process(0.5)
 	_check(third.action == EnemyShip.Action.ATTACK_FORTRESS and _shots(battle).is_empty(),
@@ -207,7 +206,7 @@ func _test_damage_and_conduction() -> void:
 	var configured: EnemyShip = battle.spawn_enemy(3)
 	configured.combat.receive_hit(ShipParts.Part.HULL, ShipParts.Ammo.SOLID, 10.0)
 	_close(configured.combat.parts.hp(ShipParts.Part.RUDDER), 5.0, "A template tunes hull-to-rudder conduction separately")
-	_close(configured.combat.parts.hp(ShipParts.Part.RAM), 9.0, "A template tunes hull-to-ram conduction separately")
+	_close(configured.combat.parts.hp(ShipParts.Part.RAM), 19.0, "A template tunes hull-to-ram conduction separately")
 	battle.free()
 
 
@@ -284,7 +283,7 @@ func _test_retreat_and_sinking() -> void:
 
 	var fleeing: EnemyShip = battle.spawn_enemy(3)
 	fleeing.set_morale(1, 1)
-	battle._physics_process(0.6)
+	battle._physics_process(0.7)
 	_check(fleeing.action == EnemyShip.Action.FLEE and not fleeing.combat.targetable and events.retreated == 1,
 		"Retreat emits its own event once when the ship exits")
 	_check(battle.kills == 0 and events.sunk == 0, "Retreat does not count as a kill")
@@ -295,6 +294,7 @@ func _test_retreat_and_sinking() -> void:
 	config.damage_profile.hull_conduction_chance = Vector2.ONE
 	battle.enemy_config = config
 	var struck: EnemyShip = battle.spawn_enemy(4)
+	struck.combat.parts.set_hp(ShipParts.Part.RAM, 10.0)
 	struck.combat.receive_hit(ShipParts.Part.HULL, ShipParts.Ammo.SOLID, 35.0)
 	_check(struck.combat.parts.hp(ShipParts.Part.RUDDER) == 0.0 and struck.combat.parts.hp(ShipParts.Part.RAM) == 0.0,
 		"A successful hull conduction can destroy the two hidden parts")
@@ -307,6 +307,35 @@ func _test_retreat_and_sinking() -> void:
 		"Zero hull removes the ship from combat immediately and takes priority over retreat")
 	_check(battle.kills == 1 and events.sunk == 1 and events.retreated == 1,
 		"Only a single sinking and reward event are emitted")
+	battle.free()
+
+
+func _test_all_enemy_hulls_sink() -> void:
+	var battle = _make_battle()
+	var sunk_ships: Array[EnemyShip] = []
+	battle.enemy_sunk.connect(func(ship: EnemyShip): sunk_ships.append(ship))
+	var hull := ShipParts.Part.HULL
+	for config: EnemyShipConfig in EnemySpawner.TYPES.values():
+		var ship: EnemyShip = battle.spawn_enemy(0, config, 550.0)
+		ship.combat.parts.set_hp(hull, 1.0)
+		_check(ship.combat.targetable, "%s stays afloat below the hull destruction threshold" % config.display_name)
+		ship.combat.parts.set_hp(hull, 0.0)
+		ship.combat.receive_hit(hull, ShipParts.Ammo.SOLID, 5.0)
+		_check(not ship.combat.targetable and ship.action == EnemyShip.Action.SINK and sunk_ships.count(ship) == 1,
+			"%s sinks exactly once when its hull HP is set to zero" % config.display_name)
+
+		var boarded: EnemyShip = battle.spawn_enemy(1, config, 550.0)
+		boarded.boarding_locked = true
+		boarded.combat.apply_raw_damage(hull, boarded.combat.parts.max_hp(hull))
+		_check(boarded.action == EnemyShip.Action.SINK and sunk_ships.count(boarded) == 1,
+			"%s sinks at zero hull HP during boarding" % config.display_name)
+
+		var shelled: EnemyShip = battle.spawn_enemy(2, config, 550.0)
+		shelled.combat.parts.set_hp(hull, 1.0)
+		shelled.combat.receive_hit(ShipParts.Part.CANNON, ShipParts.Ammo.SOLID, 10.0)
+		_check(shelled.action == EnemyShip.Action.SINK and sunk_ships.count(shelled) == 1,
+			"%s sinks when a weapons hit depletes the hull" % config.display_name)
+	_check(battle.kills == 9 and battle.enemies_defeated == 9, "Each sinking reaches battle bookkeeping once")
 	battle.free()
 
 
@@ -384,7 +413,7 @@ func _test_fortress_and_end_flow() -> void:
 
 func _make_battle():
 	var battle = BATTLE.instantiate()
-	battle.first_spawn_delay = 9999.0
+	battle.spawn_interval_range = Vector2(9999.0, 9999.0)
 	battle.gate_launch_time = 0.0
 	battle.turret_fire_range = 0.0
 	root.add_child(battle)

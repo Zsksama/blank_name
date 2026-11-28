@@ -41,6 +41,8 @@ var switch_lock: float = 0.0
 var config: CombatConfig
 
 var _ship: Node2D
+var _combat: Node2D
+var _rest_pose: Transform2D
 var _line: Line2D
 var _preview_inputs: Array = []
 var _turret_sprites: Array[Sprite2D] = []
@@ -52,7 +54,9 @@ var _reload_labels: Array[Label] = []
 func _ready() -> void:
 	add_to_group("player_weapon")
 	process_physics_priority = 5
-	_ship = get_parent().get_parent() as Node2D
+	_combat = get_parent() as Node2D
+	_ship = _combat.get_parent() as Node2D
+	_rest_pose = transform
 	_line = get_node_or_null(preview_path) as Line2D
 	if _line != null:
 		_line.top_level = true
@@ -91,7 +95,7 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	_update_reload(delta)
-	if Input.is_action_just_pressed("fire"):
+	if _ship.action_just_pressed(&"fire"):
 		try_fire()
 
 
@@ -112,7 +116,7 @@ func _update_aim(delta: float) -> void:
 	if _turret_sprites.is_empty():
 		return
 	var pivot := _turret_sprites[0].position
-	var aim := get_local_mouse_position()
+	var aim := _rest_pose.affine_inverse() * _combat.get_local_mouse_position()
 	aim.y = minf(aim.y, pivot.y)
 	var target_angle := Ballistics.angle_to_point(pivot, aim)
 	turret_angle = move_toward(turret_angle, clampf(target_angle, angle_min, angle_max), angle_speed * delta)
@@ -126,12 +130,16 @@ func _update_turret_sprites() -> void:
 
 
 func muzzle_global(index: int = 0) -> Vector2:
-	return _turret_sprites[index].to_global(_muzzle_points[index])
+	return _combat.to_global(_rest_pose * (_turret_sprites[index].transform * _muzzle_points[index]))
+
+
+func apply_visual_pose(pose: Transform2D) -> void:
+	transform = pose * _rest_pose
 
 
 func _shot_velocity(index: int, speed: float) -> Vector2:
 	var angle := clampf(turret_angle + _pending_spread[index], angle_min, angle_max)
-	return Ballistics.velocity_from_angle(angle, speed).rotated(global_rotation)
+	return Ballistics.velocity_from_angle(angle, speed).rotated(_combat.global_rotation + _rest_pose.get_rotation())
 
 
 func _roll_spread() -> float:

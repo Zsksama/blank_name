@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="EnemyShipConfig" format=3]
+
+[ext_resource type="Script" path="res://Scripts/Combat/enemy_ship_config.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"E-02"
+display_name = "快船"
+enemy_type = 0
+cost = 3
+tint = Color(0.56, 1, 0.51, 1)
+speed = 22.0
+sway_advance = 18.0
+sway_idle = 9.0
+sway_advance_hz = 0.16
+sway_idle_hz = 0.31
+approaches_for_boarding = true
+boarding_power = 65.0
+part_hp = PackedFloat64Array(40, 30, 15, 10, 20)

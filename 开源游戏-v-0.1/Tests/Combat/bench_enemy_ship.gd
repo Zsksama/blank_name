@@ -11,6 +11,7 @@ var _shells: Node2D
 var _serial := 0
 var _box_count := 0
 var _physics_ms: Array[float] = []
+var _process_ms: Array[float] = []
 var _sample_physics := false
 
 
@@ -19,16 +20,23 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	Engine.max_fps = 60
+	var args := OS.get_cmdline_user_args()
+	Engine.max_fps = 0 if args.has("--uncapped") else 60
+	if args.has("--uncapped"):
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+	root.size = Vector2i(1280, 720)
 	_battle = BATTLE.instantiate()
 	var config: EnemyShipConfig = _battle.enemy_config.duplicate()
 	config.attack_range = 0.0
 	_battle.enemy_config = config
-	_battle.first_spawn_delay = 3600.0
+	_battle.spawn_interval_range = Vector2(3600.0, 3600.0)
 	_battle.turret_fire_range = 0.0
 	root.add_child(_battle)
 	current_scene = _battle
 	_lanes = _battle.get_node("Lanes")
+	_lanes.sea.waves_enabled = not args.has("--waves-off")
+	_lanes.sea.reflections_enabled = not args.has("--reflections-off")
 	_shells = _battle.get_node("Projectiles")
 	_box_count = _battle.get_node("PlayerShip/Combat/Hitboxes").get_child_count()
 	for index in range(9):
@@ -47,14 +55,16 @@ func _run() -> void:
 		await process_frame
 		var now := Time.get_ticks_usec()
 		frame_times.append(float(now - last) / 1000.0)
+		_process_ms.append(1000.0 * Performance.get_monitor(Performance.TIME_PROCESS))
 		seconds = float(now - started) / 1_000_000.0
 		last = now
 	var viewport := root.get_visible_rect().size
-	print("Enemy stress: %dx%d, 10 ships, %d hitboxes, %d shells per physics tick" % [
+	print("Enemy stress: %dx%d, 10 ships, %d hitboxes, %d shells per physics tick, waves=%s, reflections=%s" % [
 		int(viewport.x), int(viewport.y), _box_count, SHELL_COUNT,
+		_lanes.sea.waves_enabled, _lanes.sea.reflections_enabled,
 	])
-	print("Enemy stress: %.2f FPS, frame p95 %.2f ms, physics p95 %.2f ms (%d ticks)" % [
-		float(frame_times.size()) / seconds, _p95(frame_times), _p95(_physics_ms), _physics_ms.size(),
+	print("Enemy stress: %.2f FPS, frame p95 %.2f ms, process p95 %.2f ms, physics p95 %.2f ms (%d ticks)" % [
+		float(frame_times.size()) / seconds, _p95(frame_times), _p95(_process_ms), _p95(_physics_ms), _physics_ms.size(),
 	])
 	quit()
 

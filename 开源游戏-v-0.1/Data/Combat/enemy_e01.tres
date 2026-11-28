@@ -1,48 +1,11 @@
-[gd_resource type="Resource" script_class="EnemyShipConfig" load_steps=8 format=3]
+[gd_resource type="Resource" script_class="EnemyShipConfig" format=3]
 
 [ext_resource type="Script" path="res://Scripts/Combat/enemy_ship_config.gd" id="1_config"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Characters/ship_enemy.png" id="2_ship"]
-[ext_resource type="Script" path="res://Scripts/Combat/ship_damage_profile.gd" id="3_parts"]
-
-[ext_resource type="Texture2D" path="res://Assets/Art/Effects/sail_torn_small.png" id="4_torn"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Effects/sail_ruined_small.png" id="5_ruined"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Effects/hull_burn_small.png" id="6_burn"]
-
-[sub_resource type="Resource" id="Resource_e01_parts"]
-script = ExtResource("3_parts")
-max_hp = PackedFloat64Array(30, 40, 20, 10, 10)
-sail_multipliers = Vector3(0.6, 1.8, 0.7)
-hull_multipliers = Vector3(1, 0.25, 0.85)
-cannon_multipliers = Vector3(0.85, 0.2, 0.95)
-hull_conduction_chance = Vector2(0.15, 0.1)
-cannon_conduction_chance = Vector2(0.1, 0.1)
-hull_conduction_scale = Vector2(0.3, 0.3)
-cannon_conduction_scale = Vector2(0.3, 0.3)
-cannon_hull_damage_scale = 0.5
-sail_box = Rect2(-0.14, -0.39, 0.44, 0.34)
-hull_box = Rect2(-0.465, 0.16, 0.94, 0.29)
-cannon_box = Rect2(-0.32, -0.07, 0.33, 0.24)
 
 [resource]
 script = ExtResource("1_config")
 id = &"E-01"
-display_name = "倭船"
-sprite = ExtResource("2_ship")
-size = Vector2(120, 56)
-art_keel_ratio = 0.45
-sail_cutout = Rect2(104, 34, 109, 51)
-sail_torn_texture = ExtResource("4_torn")
-sail_ruined_texture = ExtResource("5_ruined")
-hull_burn_texture = ExtResource("6_burn")
-speed = 18.0
-stop_distance = 320.0
-min_gap = 144.0
-can_change_lane = false
-lane_change_margin = 180.0
-attack_range = 400.0
-attack_damage = 8.0
-attack_interval = 3.0
-target_switch_delay = 0.3
-projectile_speed = 850.0
-muzzle_offset = Vector2(0.5, 0.07)
-damage_profile = SubResource("Resource_e01_parts")
+display_name = "普通船"
+enemy_type = 1
+cost = 5
+tint = Color(1, 0.94, 0.35, 1)

@@ -16,4 +16,6 @@ config = ExtResource("2_config")
 [node name="Combat" type="Node2D" parent="."]
 script = ExtResource("3_combat")
 
-[node name="Sprite2D" type="Sprite2D" parent="Combat" unique_id=1375947794]
+[node name="Visual" type="Node2D" parent="Combat"]
+
+[node name="Sprite2D" type="Sprite2D" parent="Combat/Visual" unique_id=1375947794]
