@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="EnemyShipConfig" format=3 uid="uid://chjvygw70kn7a"]
+
+[ext_resource type="Script" uid="uid://bngqvkawgrneb" path="res://Scripts/Combat/enemy_ship_config.gd" id="1"]
+[ext_resource type="Resource" uid="uid://cnmg2u64bvs2q" path="res://Data/Combat/enemy_parts.tres" id="1_oljl5"]
+[ext_resource type="Texture2D" uid="uid://sj6qubydlifj" path="res://Assets/Art/Effects/hull_burn_small.png" id="2_2utfq"]
+[ext_resource type="Texture2D" uid="uid://bgmii3vp8gg3i" path="res://Assets/Art/Effects/sail_ruined_small.png" id="3_ymeua"]
+[ext_resource type="Texture2D" uid="uid://bo50glmjhn5y1" path="res://Assets/Art/Effects/sail_torn_small.png" id="4_bymxx"]
+[ext_resource type="Texture2D" uid="uid://g5c2kwwugtth" path="res://Assets/Art/Characters/ship_enemy_shared.png" id="6_xdu2w"]
+
+[resource]
+script = ExtResource("1")
+id = &"E-02"
+display_name = "快船"
+enemy_type = 0
+cost = 3
+tint = Color(0.56, 1, 0.51, 1)
+speed = 22.0
+stop_distance = 408.0
+sway_advance = 18.0
+sway_idle = 9.0
+sway_advance_hz = 0.16
+sway_idle_hz = 0.31
+attack_range = 430.0
+approaches_for_boarding = true
+boarding_power = 65.0
+part_hp = PackedFloat64Array(30, 30, 15, 10, 20)

@@ -3,9 +3,7 @@ extends Node2D
 
 @export var damage_textures: Array[Texture2D]
 
-## 望楼模块的标记接口。
-var is_marked := false
-
+@onready var watchtower: Watchtower = $Watchtower
 @onready var _visual: Sprite2D = $FortVisual
 
 

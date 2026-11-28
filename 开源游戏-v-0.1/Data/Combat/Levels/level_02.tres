@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="EnemySpawnLevel" format=3]
+
+[ext_resource type="Script" path="res://Scripts/Combat/enemy_spawn_level.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+level_id = 2
+display_name = "1558-05-02"
+time_of_day = "day"
+weather = "clear"
+budget = 45
+allowed_types = Array[int]([0, 1])
+must_spawn = Dictionary[int, int]({1: 2})
+formation_pool = Array[int]([1])
+reserve_required_for_snake = true

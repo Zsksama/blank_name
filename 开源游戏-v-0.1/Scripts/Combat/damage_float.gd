@@ -1,39 +1,27 @@
 class_name DamageFloat
-extends Node2D
-
-## 伤害飘字：在受击位置冒一个 "-N"，上飘淡出后自毁。
-## 由 ShipCombat.receive_hit() 调用，挂在战斗场景根节点下（避免跟随船只的 1/4 缩放）。
-
-const FONT_SIZE := 20
-const RISE := 36.0
-const LIFE := 0.7
-const OUTLINE := 4
+extends RefCounted
 
 
 static func spawn(host: Node, global_pos: Vector2, amount: float, tint: Color) -> void:
-	if host == null or amount < 1.0:
+	if amount < 0.5:
 		return
-	var node := Label.new()
-	node.name = "DamageFloat"
-	node.text = "-%d" % roundi(amount)
-	node.add_theme_font_size_override("font_size", FONT_SIZE)
-	node.add_theme_color_override("font_color", tint)
-	node.add_theme_color_override("font_outline_color", Color(0.05, 0.05, 0.07, 0.9))
-	node.add_theme_constant_override("outline_size", OUTLINE)
-	node.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	node.z_index = 120
-	node.z_as_relative = false
-	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption(host, global_pos + Vector2.UP * 28.0, "-%.1f" % amount, tint, 16)
 
-	host.add_child(node)
-	var root := host as Node2D
-	var start := global_pos + Vector2(-14.0, -24.0)
-	node.position = root.to_local(start) if root != null else start
 
-	var tween := node.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(node, "position:y", node.position.y - RISE, LIFE) \
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(node, "modulate:a", 0.0, LIFE * 0.55).set_delay(LIFE * 0.45)
-	tween.set_parallel(false)
-	tween.tween_callback(node.queue_free)
+static func caption(host: Node, global_pos: Vector2, message: String, tint: Color, font_size: int) -> void:
+	var label := Label.new()
+	label.text = message
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.scale = Vector2.ONE * 0.5
+	label.add_theme_font_size_override(&"font_size", font_size * 2)
+	label.add_theme_color_override(&"font_color", tint)
+	label.add_theme_color_override(&"font_outline_color", Color(0.05, 0.05, 0.07))
+	label.add_theme_constant_override(&"outline_size", 7)
+	host.add_child(label)
+	label.global_position = global_pos - Vector2(label.get_combined_minimum_size().x * 0.25, 0.0)
+	label.z_index = 120
+	var tween := label.create_tween().set_parallel().set_ignore_time_scale(true)
+	tween.tween_property(label, "position:y", label.position.y - 18.0, 0.63)
+	tween.tween_property(label, "modulate:a", 0.0, 0.36).set_delay(0.27)
+	tween.chain().tween_callback(label.queue_free)

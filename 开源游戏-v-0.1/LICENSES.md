@@ -9,6 +9,7 @@
 | 素材名称 | 作者 | 来源网址 | 许可证 | 下载日期 | 是否修改 | 修改内容 | 许可文件 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 示例：Medieval Village Tileset | 某某 | https://… | CC BY 4.0 | 2026-11-21 | 是 | 调色、裁剪 | LICENSE.txt |
+| 出怪海螺 `Assets/Audio/SFX/enemy_spawn.ogg` | 待项目组确认 | 策划配套文件 `音效音乐/enemy_spawn.ogg`，文件元数据标注使用 LMMS | 待项目组确认 | 2026-11-27 | 否 | 原文件复制至项目资源目录 | 待补录 |
 
 > 上表示例行在正式提交前删掉。
 
@@ -27,6 +28,7 @@
 | 工具 | 用途 | 生成内容 | 人工修改 |
 | --- | --- | --- | --- |
 | OpenAI ImageGen | 经营场景剧情背景 | `Assets/Art/UI/management_harbor.png`，参考纸墨木刻风格生成的沿海港口插画 | 使用生成原图，Godot 按视口比例裁切显示 |
+| OpenAI ImageGen | 三类敌船的共用船图 | `Assets/Art/Characters/ship_enemy_shared.png`，以现有船图为参考重画同一朝向、轮廓和甲板布局，使用可染色的中性帆布和木色 | 清理轮廓外的低透明度像素并缩放至 270×180，游戏内按船型着色 |
 
 ## 四、游戏内署名（主菜单「制作人员 / Credits」页）
 

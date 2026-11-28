@@ -1,544 +1,503 @@
 class_name BoardingFight
 extends Node
 
-## 接舷战 T-401—T-406（依据 `10-战斗/35-M8接舷战.md`、`程序任务派发/待派-接舷战.md`）。
-##
-## 设计口径：接舷是**被动作战**，系统不给任何加成，划不划算由玩家按公式自己算。
-## 本节点由 battle_manager 在 _ready() 里创建并调用 tick()，自带相机与 UI，不改战斗场景结构。
-
+## M8 接舷。海战使用减速时间，交手、按键和镜头使用真实时间。
 enum Result { WIN, FLEE, LOSE }
 
 signal finished(result: int)
-signal morale_changed(delta: float)
+signal morale_changed(points: float)
+signal active_changed(active: bool)
 
-@export_group("开关")
+const ManagementRules := preload("res://Scripts/Management/management_rules.gd")
+const EFFECTS := preload("res://Scripts/Combat/boarding_effects.gd")
+const MORALE_FACTORS := [1.2, 0.9, 0.75, 1.3]
+const DAMAGE_SPLASH := 0.3
+const POWER_TO_HP := 0.2
+const IMPACT_SPEED_SCALE := 4.0 # 现版船速为 10–25 px/s，换算到原案的撞击调参单位。
+const LIGHT_IMPACT_SPEED := 80.0
+const RAM_GUARD := 0.7
+const RAM_WEAR := 0.2
+
 @export var enabled := true
-
-@export_group("T-401 触发与判定")
-## 碰撞箱相交之外的第二重判定：两船中心距 ≤ 这个值也算接触（占位）。
-@export var contact_center_distance := 40.0
-## 同一对船的接舷冷却（秒）。
 @export_range(0.0, 10.0, 0.1) var cooldown := 3.0
-
-@export_group("T-402 撞击伤害")
-## 公式里的 k。占位：按 100 px/s 撞角完好约 3.5 伤。
-@export var ram_k := 0.05
-## 撞角减伤系数：撞角剩余耐久比例 × 该值。
-@export var ram_hp_factor := 0.7
-@export_range(0.0, 1.0, 0.01) var ram_loss_ratio := 0.2
-@export_range(0.0, 1.0, 0.01) var ram_loss_cap := 0.3
-## 相对速度低于此值算“轻碰”，伤害按 0 处理（仍进接舷）。
-@export var light_hit_speed := 80.0
-## 换道重叠不走公式，走这个固定伤害（占位，等舰体血量定稿再校）。
-@export var lane_overlap_damage := 5.0
-@export var tonnage_player := 1.0
-@export var tonnage_enemy := 1.0
-
-@export_group("T-403 接舷过程")
 @export_range(0.01, 1.0, 0.01) var boarding_time_scale := 0.03
-@export var power_player := 6.0
-@export var power_enemy := 5.0
-## 其它部位每秒掉「舰体伤害 × 该比例」。
-@export_range(0.0, 1.0, 0.01) var splash_ratio := 0.3
-
-@export_group("T-404 QTE 与逃跑")
-@export var qte_min := 1.0
-@export var qte_max := 1.5
-@export var qte_press_gain := 0.01
-## 按住空格时的自动重复间隔（秒）。
-@export var qte_decay := 0.01
-@export var qte_decay_interval := 0.3
-@export var flee_hold := 1.0
-
-@export_group("T-405 结局与气焰")
-@export var flee_back_distance := 200.0
+@export var ram_k := 0.05
+@export var lane_overlap_damage := 5.0
+@export var player_tonnage := 1.0
+@export var player_power := 100.0
+@export var player_power_per_level := 10.0
+@export_range(0.0, 1.0, 0.01) var damage_scale := 0.3
+@export_range(0.1, 5.0, 0.1) var flee_hold := 1.0
+@export var flee_distance := 200.0
 @export_range(0.0, 1.0, 0.01) var flee_part_loss := 0.15
-## 逃跑气焰 +10；胜利气焰 −25。
-@export var morale_flee_gain := 10.0
-@export var morale_win_loss := 25.0
-## 气焰四档系数：1.2 / 0.9 / 0.75 / 1.3（M14 定档后由外部 set_morale_tier 驱动）。
-@export var morale_factors: Array[float] = [1.2, 0.9, 0.75, 1.3]
-@export var morale_tier := 1
 @export var stun_time := 0.5
-
-@export_group("T-406 演出")
-@export var camera_zoom := 2.6
-@export var camera_lerp := 0.35
-@export var big_text_time := 0.8
-@export var log_boarding := true
+@export_range(1.0, 4.0, 0.1) var camera_zoom := 2.6
+@export var log_boarding := false
 
 var active := false
+var qte_multiplier := 1.0
+var entry_snapshot: Dictionary = {}
 
-var _manager: Node
-var _player: PlayerShip
 var _enemy: EnemyShip
-var _cam: Camera2D
-var _layer: CanvasLayer
-var _prompt: Label
-var _big: Label
-var _qte := 1.0
-var _decay_left := 0.0
-var _space_was_down := false
-var _snap_player_hull := 0.0
-var _snap_player_ram := 0.0
-var _snap_enemy_hull := 0.0
-var _snap_enemy_ram := 0.0
-var _snap_lane_overlap := false
-var _hp: Label
-var _flee_left := 0.0
-var _second_accum := 0.0
-var _cooldowns := {}
-var _last_msec := 0
+var _cooldowns: Dictionary[int, int] = {}
+var _space_down := false
 var _saved_time_scale := 1.0
-var _enemy_speed_cap := INF
-var _stun_left := 0.0
-var _mouse_was_visible := true
+var _get_lamp: Callable
+var _get_morale: Callable
+var _ship_level := 1
+var _exchange_timer: Timer
+var _decay_timer: Timer
+var _flee_timer: Timer
+var _effects: EFFECTS
+
+var _camera: Camera2D
+var _camera_tween: Tween
+var _previous_camera: Camera2D
+var _focus := Vector2.ZERO
+var _camera_weight := 0.0
+var _map_bounds: Rect2
+var _overlay: Control
+var _prompt: Label
+var _impact: Label
+var _impact_tween: Tween
+var _player_hull: ProgressBar
+var _enemy_hull: ProgressBar
+var _hud_hidden: Array[CanvasItem] = []
+var _morale_tween: Tween
+
+@onready var _player: PlayerShip = $"../PlayerShip"
+@onready var _lanes: Lanes = $"../Lanes"
+@onready var _hud: Array[CanvasItem] = [$"../HUD/Status", $"../HUD/Hint", $"../HUD/ReloadRing", $"../Crosshair"]
+@onready var _morale_indicator: Control = $"../HUD/Morale"
 
 
-func setup(manager: Node, player: PlayerShip) -> void:
-	_manager = manager
-	_player = player
-	_cam = Camera2D.new()
-	_cam.name = "BoardingCamera"
-	_cam.enabled = false
-	add_child(_cam)
+func _ready() -> void:
+	var background: Sprite2D = $"../Background"
+	_map_bounds = background.global_transform * background.get_rect()
+	_camera = Camera2D.new()
+	_camera.name = "BoardingCamera"
+	_camera.enabled = false
+	add_child(_camera)
+	_effects = EFFECTS.new()
+	_effects.name = "CombatFeedback"
+	add_child(_effects)
+	get_viewport().size_changed.connect(func():
+		if _camera.enabled:
+			_position_camera(_camera_weight)
+	)
 	_build_ui()
+	_exchange_timer = _real_timer(1.0, false, _exchange)
+	_decay_timer = _real_timer(0.3, false, _decay_qte)
+	_flee_timer = _real_timer(flee_hold, true, _try_flee)
+	set_process(false)
+	set_process_input(false)
 
 
-func set_morale_tier(tier: int) -> void:
-	morale_tier = clampi(tier, 0, morale_factors.size() - 1)
+func configure(read_lamp: Callable, read_morale: Callable, ship_level: int) -> void:
+	_get_lamp = read_lamp
+	_get_morale = read_morale
+	_ship_level = ship_level
 
 
-func tick(_delta: float) -> void:
-	var now := Time.get_ticks_msec()
-	if _last_msec == 0:
-		_last_msec = now
-	var real := float(now - _last_msec) / 1000.0
-	_last_msec = now
-	_tick_cooldowns(real)
-	_tick_stun(real)
-	if active:
-		_step_boarding(real)
+func can_engage(enemy: EnemyShip) -> bool:
+	return enabled and not active and enemy.combat.targetable and not enemy.boarding_locked \
+		and _cooldowns.get(enemy.get_instance_id(), 0) <= Time.get_ticks_msec()
 
 
-# ---------------------------------------------------------------- T-401
-
-func try_engage(enemy: EnemyShip, relative_speed: float, lane_overlap: bool) -> bool:
-	if not enabled or active or enemy == null or _player == null:
+func try_engage(enemy: EnemyShip, closing_speed: float, lane_overlap: bool) -> bool:
+	if not can_engage(enemy) or not _player.combat.targetable or _player.controls_locked:
 		return false
-	if not enemy.combat.targetable or not _player.combat.targetable:
-		return false
-	var key := enemy.get_instance_id()
-	if _cooldowns.has(key) and float(_cooldowns[key]) > 0.0:
-		return false
-	_enter(enemy, relative_speed, lane_overlap)
+	var player_combat := _player.combat
+	var enemy_combat := enemy.combat
+	var upgraded_power := player_power + player_power_per_level * (_ship_level - 1)
+	# 预留给战后结算和修复。目前供联调复现。
+	entry_snapshot = {
+		"player": _snapshot(player_combat.parts, upgraded_power),
+		"enemy": _snapshot(enemy_combat.parts, enemy.boarding_power),
+		"lane_overlap": lane_overlap,
+	}
+	_apply_impact(enemy, closing_speed * IMPACT_SPEED_SCALE, lane_overlap)
+	var contact := player_combat.aim_point().lerp(enemy_combat.aim_point(), 0.5)
+	_lanes.splash_at(_player.lane_index, _lanes.to_local(contact).x, true)
+	if player_combat.parts.is_sunk() or enemy_combat.parts.is_sunk():
+		_start_cooldown(enemy)
+		_show_impact("撞沉！")
+		return true
+
+	_enemy = enemy
+	active = true
+	_enemy.boarding_locked = true
+	_player.lock_controls()
+	_clear_input()
+	_saved_time_scale = Engine.time_scale
+	Engine.time_scale = boarding_time_scale
+	_effects.begin(player_combat, enemy_combat)
+	# 接舷期间关掉逐部位飘字：每秒五条数字会糊成一片，这里本来就用合并数字。
+	player_combat.damage_float_enabled = false
+	enemy_combat.damage_float_enabled = false
+	_set_presentation(true)
+	_show_impact("撞击！")
+	_exchange_timer.start()
+	_decay_timer.start()
+	set_process(true)
+	set_process_input(true)
+	active_changed.emit(true)
+	if log_boarding:
+		print("[接舷] 开始 %s %s" % [enemy.config.display_name, entry_snapshot])
 	return true
 
 
-func center_distance(enemy: EnemyShip) -> float:
-	if enemy == null or _player == null:
-		return INF
-	return absf(enemy.global_position.x - _player.global_position.x)
+func _snapshot(parts: ShipParts, power: float) -> Dictionary:
+	return {"hull": parts.hp(ShipParts.Part.HULL), "ram": parts.hp(ShipParts.Part.RAM), "power": power}
 
 
-# ---------------------------------------------------------------- T-402
-
-func _impact_damage(attacker: ShipCombat, defender_is_player: bool, relative_speed: float, lane_overlap: bool) -> float:
+func _apply_impact(enemy: EnemyShip, speed: float, lane_overlap: bool) -> void:
+	var player_combat := _player.combat
+	var enemy_combat := enemy.combat
 	if lane_overlap:
-		return lane_overlap_damage
-	if relative_speed < light_hit_speed:
-		return 0.0
-	var ram_max := maxf(attacker.parts.max_hp(ShipParts.Part.RAM), 0.001)
-	var ram_ratio := clampf(attacker.parts.hp(ShipParts.Part.RAM) / ram_max, 0.0, 1.0)
-	# 撞角三档复用 M4：完好 x1.0 / 破损 x0.5 / 被破坏 x0（撞角碎了撞不出伤害）。
-	var ram_state := attacker.parts.ram_damage_multiplier()
-	var ram_factor := ram_ratio * ram_hp_factor * ram_state
-	var tonnage_ratio := (tonnage_player / tonnage_enemy) if defender_is_player else (tonnage_enemy / tonnage_player)
-	return relative_speed * tonnage_ratio * ram_factor * ram_k
+		player_combat.apply_raw_damage(ShipParts.Part.HULL, lane_overlap_damage)
+		enemy_combat.apply_raw_damage(ShipParts.Part.HULL, lane_overlap_damage)
+	elif speed >= LIGHT_IMPACT_SPEED:
+		var tonnage_ratio := maxf(0.001, enemy.config.boarding_tonnage) / maxf(0.001, player_tonnage)
+		var to_player := speed * ram_k * tonnage_ratio * _ram_exposure(player_combat.parts)
+		var to_enemy := speed * ram_k / tonnage_ratio * _ram_exposure(enemy_combat.parts)
+		for combat: ShipCombat in [player_combat, enemy_combat]:
+			combat.apply_raw_damage(ShipParts.Part.RAM, combat.parts.max_hp(ShipParts.Part.RAM) * RAM_WEAR)
+		player_combat.apply_raw_damage(ShipParts.Part.HULL, to_player)
+		enemy_combat.apply_raw_damage(ShipParts.Part.HULL, to_enemy)
 
 
-func _apply_impact(enemy: EnemyShip, relative_speed: float, lane_overlap: bool) -> void:
-	var to_enemy := _impact_damage(_player.combat, false, relative_speed, lane_overlap)
-	var to_player := _impact_damage(enemy.combat, true, relative_speed, lane_overlap)
-	if to_enemy > 0.0:
-		enemy.combat.apply_raw_damage(ShipParts.Part.HULL, to_enemy)
-	if to_player > 0.0:
-		_player.combat.apply_raw_damage(ShipParts.Part.HULL, to_player)
-	# 只有“实打实的正面撞击”才扣撞角耐久（20%）：
-	# 换道蹭上来（lane_overlap）不磨，低于轻碰阈值（没造成撞击）也不磨。
-	if not lane_overlap and relative_speed >= light_hit_speed:
-		_wear_ram(_player.combat)
-		_wear_ram(enemy.combat)
+func _ram_exposure(parts: ShipParts) -> float:
+	var ratio := parts.hp(ShipParts.Part.RAM) / maxf(parts.max_hp(ShipParts.Part.RAM), 0.001)
+	return 1.0 - ratio * RAM_GUARD
+
+
+func _process(delta: float) -> void:
+	if not _resolve_finished():
+		_effects.advance(minf(delta / maxf(Engine.time_scale, 0.001), 0.05))
+		_position_camera(_camera_weight)
+		_update_ui()
+
+
+func _input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null:
+		return
+	var code := key.physical_keycode if key.physical_keycode != 0 else key.keycode
+	match code:
+		KEY_SPACE:
+			if key.pressed and not key.echo and not _space_down:
+				qte_multiplier = minf(1.5, qte_multiplier + 0.01)
+				_effects.on_qte()
+			_space_down = key.pressed
+		KEY_T:
+			if key.pressed and not key.echo and _flee_timer.is_stopped():
+				_flee_timer.start(flee_hold)
+			elif not key.pressed:
+				_flee_timer.stop()
+		_:
+			return
+	get_viewport().set_input_as_handled()
+
+
+func _notification(what: int) -> void:
+	if active and (what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_PAUSED):
+		_space_down = false
+		_flee_timer.stop()
+
+
+func _decay_qte() -> void:
+	qte_multiplier = maxf(1.0, qte_multiplier - 0.01)
+
+
+func _exchange() -> void:
+	if not active or _resolve_finished():
+		return
+	var lamp_factor := _lamp_factor()
+	var morale_factor := _morale_factor()
+	var enemy := _enemy
+	var player_damage := float(entry_snapshot.player.power) * lamp_factor * qte_multiplier * damage_scale * POWER_TO_HP
+	var enemy_damage := enemy.boarding_power * morale_factor * damage_scale * POWER_TO_HP
+	var to_player := _apply_exchange_damage(_player.combat, enemy_damage)
+	if not active or not is_instance_valid(enemy):
+		return
+	var to_enemy := _apply_exchange_damage(enemy.combat, player_damage)
+	if not active or not is_instance_valid(enemy):
+		return
+	_effects.on_exchange(to_player, to_enemy)
 	if log_boarding:
-		print("[接舷] 撞击 相对速度=%.1f 重叠=%s → 敌 %.1f / 我 %.1f" % [relative_speed, str(lane_overlap), to_enemy, to_player])
+		print("[接舷] 我舰 -%.2f / 敌舰 -%.2f · QTE %.2f · 灯火 ×%.2f · 气焰 ×%.2f" % [
+			to_player, to_enemy, qte_multiplier, lamp_factor, morale_factor])
+	_resolve_finished()
 
 
-func _wear_ram(combat: ShipCombat) -> void:
-	var ram_max := combat.parts.max_hp(ShipParts.Part.RAM)
-	var loss := minf(ram_max * ram_loss_ratio, ram_max * ram_loss_cap)
-	combat.parts.set_hp(ShipParts.Part.RAM, combat.parts.hp(ShipParts.Part.RAM) - loss)
-
-
-# ---------------------------------------------------------------- 进入 / 退出
-
-func _enter(enemy: EnemyShip, relative_speed: float, lane_overlap: bool) -> void:
-	_enemy = enemy
-	# T-401 规则 5：进入时记录快照（舰体血量 / 撞角耐久 / 战力），供日志与结算核对。
-	_snap_player_hull = _player.combat.parts.hp(ShipParts.Part.HULL)
-	_snap_player_ram = _player.combat.parts.hp(ShipParts.Part.RAM)
-	_snap_enemy_hull = enemy.combat.parts.hp(ShipParts.Part.HULL)
-	_snap_enemy_ram = enemy.combat.parts.hp(ShipParts.Part.RAM)
-	_snap_lane_overlap = lane_overlap
-	_enemy_speed_cap = enemy.speed_cap
-	# 接舷期间敌船停死，避免它在慢放下继续往左挪；两船位置保持真实，不做任何吸附。
-	enemy.speed_cap = 0.0
-	_apply_impact(enemy, relative_speed, lane_overlap)
-
-	# 撞沉了就不进接舷，直接走击沉流程。
-	if _player.combat.parts.is_sunk() or enemy.combat.parts.is_sunk():
-		_cooldowns[enemy.get_instance_id()] = cooldown
-		_show_big("撞沉！")
-		_finish_if_sunk()
-		return
-
-	active = true
-	_qte = qte_min
-	_decay_left = qte_decay_interval
-	_space_was_down = false
-	_flee_left = 0.0
-	_second_accum = 0.0
-	_saved_time_scale = Engine.time_scale
-	Engine.time_scale = boarding_time_scale
-	_player.lock_controls()
-	_player.combat.damage_float_enabled = false
-	enemy.combat.damage_float_enabled = false
-	_show_ui(true)
-	_update_hp()
-	_show_big("撞击！")
-	_focus_camera(true)
-	if log_boarding:
-		print("[接舷] 开始 敌=%s 我方舰体=%.1f 敌方舰体=%.1f" % [enemy.config.display_name, _player.combat.parts.hp(ShipParts.Part.HULL), enemy.combat.parts.hp(ShipParts.Part.HULL)])
-
-
-func _exit(result: int) -> void:
-	if not active:
-		return
-	active = false
-	# T-406 退出顺序：恢复时间 → 清输入 → 恢复 UI → 上冷却。
-	Engine.time_scale = _saved_time_scale
-	_qte = qte_min
-	_flee_left = 0.0
-	_space_was_down = false
-	_show_ui(false)
-	_player.controls_locked = false
-	_player.combat.damage_float_enabled = true
-	if _enemy != null and is_instance_valid(_enemy):
-		_enemy.combat.damage_float_enabled = true
-	_focus_camera(false)
-	if _enemy != null and is_instance_valid(_enemy):
-		_cooldowns[_enemy.get_instance_id()] = cooldown
-	_release_stun()
-
-	match result:
-		Result.WIN:
-			if log_boarding:
-				print("[接舷] 结局：胜利 → 击沉敌船、气焰 -%.0f" % morale_win_loss)
-			morale_changed.emit(-morale_win_loss)
-			if _enemy != null and is_instance_valid(_enemy):
-				_enemy.combat.apply_raw_damage(ShipParts.Part.HULL, 99999.0)
-		Result.FLEE:
-			if log_boarding:
-				print("[接舷] 结局：逃跑 → 后退 %.0f px、各部位 -%.0f%%、气焰 +%.0f" % [flee_back_distance, flee_part_loss * 100.0, morale_flee_gain])
-			morale_changed.emit(morale_flee_gain)
-			_retreat_player()
-			_apply_stun()
-		Result.LOSE:
-			if log_boarding:
-				print("[接舷] 结局：失败 → 走击沉流程")
-			_player.combat.apply_raw_damage(ShipParts.Part.HULL, 99999.0)
-			_apply_stun()
-	finished.emit(result)
-	_enemy = null
-
-
-func _finish_if_sunk() -> void:
-	if _enemy != null and is_instance_valid(_enemy) and _enemy.combat.parts.is_sunk():
-		return
-	if _player.combat.parts.is_sunk():
-		return
-
-
-# ---------------------------------------------------------------- T-403 / T-404
-
-func _step_boarding(real: float) -> void:
-	if _enemy == null or not is_instance_valid(_enemy):
-		_exit(Result.FLEE)
-		return
-
-	_update_qte(real)
-
-	_second_accum += real
-	while _second_accum >= 1.0 and active:
-		_second_accum -= 1.0
-		_tick_second()
-
-	if not active:
-		return
-	if _player.combat.parts.is_sunk():
-		_exit(Result.LOSE)
-	elif _enemy.combat.parts.is_sunk():
-		_exit(Result.WIN)
-
-
-func _update_qte(real: float) -> void:
-	# T-404：每“按一次”空格 +0.01（按下的那一帧才算），不看按住时长。
-	var space_down := Input.is_physical_key_pressed(KEY_SPACE)
-	if space_down and not _space_was_down:
-		_qte = minf(qte_max, _qte + qte_press_gain)
-	_space_was_down = space_down
-	# 自然回落：每 0.3s −0.01，与按不按无关。
-	_decay_left -= real
-	if _decay_left <= 0.0:
-		_decay_left = qte_decay_interval
-		_qte = maxf(qte_min, _qte - qte_decay)
-	_update_prompt()
-
-	if Input.is_physical_key_pressed(KEY_T):
-		_flee_left += real
-		if _flee_left >= flee_hold:
-			_exit(Result.FLEE)
-	else:
-		_flee_left = 0.0
-
-
-func _tick_second() -> void:
-	var player_out := power_player * _lamp_factor() * _qte
-	var enemy_out := power_enemy * _morale_factor()
-	_damage_player(enemy_out)
-	_damage_enemy(player_out)
-	_flash_damage(player_out, enemy_out)
-	_update_hp()
-	if log_boarding:
-		print("[接舷] 每秒 我舰体=%.1f 敌舰体=%.1f qte=%.2f 灯火x%.2f 气焰x%.2f" % [
-			_player.combat.parts.hp(ShipParts.Part.HULL),
-			_enemy.combat.parts.hp(ShipParts.Part.HULL), _qte, _lamp_factor(), _morale_factor()])
-
-
-func _damage_player(amount: float) -> void:
-	_player.combat.apply_raw_damage(ShipParts.Part.HULL, amount)
-	var splash := amount * splash_ratio
-	for part in [ShipParts.Part.SAIL, ShipParts.Part.CANNON, ShipParts.Part.RUDDER, ShipParts.Part.RAM]:
-		_player.combat.apply_raw_damage(part, splash)
-
-
-func _damage_enemy(amount: float) -> void:
-	if _enemy == null or not is_instance_valid(_enemy):
-		return
-	_enemy.combat.apply_raw_damage(ShipParts.Part.HULL, amount)
-	var splash := amount * splash_ratio
-	for part in [ShipParts.Part.SAIL, ShipParts.Part.CANNON, ShipParts.Part.RUDDER, ShipParts.Part.RAM]:
-		_enemy.combat.apply_raw_damage(part, splash)
-
-
-## 每秒只在两船各冒一条合并飘字（逐部位飘字在接舷期间已关）。
-func _flash_damage(to_enemy: float, to_player: float) -> void:
-	var host := _manager
-	DamageFloat.spawn(host, _player.combat.aim_point(), to_player, Color(1.0, 0.42, 0.38))
-	if _enemy != null and is_instance_valid(_enemy):
-		DamageFloat.spawn(host, _enemy.combat.aim_point(), to_enemy, Color(1.0, 0.88, 0.5))
+func _apply_exchange_damage(combat: ShipCombat, amount: float) -> float:
+	var hull_damage := minf(combat.parts.hp(ShipParts.Part.HULL), amount)
+	for part: ShipParts.Part in [ShipParts.Part.SAIL, ShipParts.Part.CANNON, ShipParts.Part.RUDDER, ShipParts.Part.RAM]:
+		combat.apply_raw_damage(part, hull_damage * DAMAGE_SPLASH)
+	combat.apply_raw_damage(ShipParts.Part.HULL, hull_damage)
+	return hull_damage
 
 
 func _lamp_factor() -> float:
-	var lamp := 100
-	if _manager != null and _manager.get("lamp_value") != null:
-		lamp = int(_manager.lamp_value)
-	if lamp >= 70:
-		return 1.2
-	if lamp >= 40:
-		return 1.0
-	if lamp >= 20:
-		return 0.8
-	return 0.6
+	match ManagementRules.light_tier(_get_lamp.call()).id:
+		"bright": return 1.1
+		"faint": return 0.9
+	return 1.0
 
 
 func _morale_factor() -> float:
-	if morale_factors.is_empty():
-		return 1.0
-	return morale_factors[clampi(morale_tier, 0, morale_factors.size() - 1)]
+	var morale: float = _get_morale.call()
+	if morale > 0.85:
+		return MORALE_FACTORS[0]
+	if morale >= 0.30:
+		return MORALE_FACTORS[1]
+	if morale >= 0.10:
+		return MORALE_FACTORS[2]
+	return MORALE_FACTORS[3]
 
 
-# ---------------------------------------------------------------- T-405 收尾
-
-func _retreat_player() -> void:
-	var left := 0.0
-	if _manager != null and _manager.get("_lanes") != null:
-		left = float(_manager._lanes.sea_left) + 24.0
-	var target_x := maxf(_player.global_position.x - flee_back_distance, left)
-	var tween := create_tween()
-	tween.set_ignore_time_scale(true)
-	tween.tween_property(_player, "global_position:x", target_x, 0.6)
-	for part in ShipParts.Part.values():
-		var hp := _player.combat.parts.hp(part)
-		_player.combat.parts.set_hp(part, hp * (1.0 - flee_part_loss))
+func _resolve_finished() -> bool:
+	if _player.combat.parts.is_sunk():
+		_finish(Result.LOSE)
+	elif not is_instance_valid(_enemy):
+		cancel()
+	elif _enemy.combat.parts.is_sunk():
+		_finish(Result.WIN)
+	else:
+		return false
+	return true
 
 
-func _apply_stun() -> void:
-	if _enemy == null or not is_instance_valid(_enemy):
-		return
-	_enemy.speed_cap = 0.0
-	_stun_left = stun_time
+func _try_flee() -> void:
+	if active and not _resolve_finished():
+		_finish(Result.FLEE)
 
 
-func _release_stun() -> void:
-	if _enemy == null or not is_instance_valid(_enemy):
-		return
-	_enemy.speed_cap = _enemy_speed_cap
+func _finish(result: Result) -> void:
+	var morale_before: float = _get_morale.call()
+	_end_fight(stun_time)
+	match result:
+		Result.WIN:
+			morale_changed.emit(-25.0)
+		Result.FLEE:
+			_player.move_and_collide(Vector2.LEFT * flee_distance)
+			for part: ShipParts.Part in [ShipParts.Part.SAIL, ShipParts.Part.CANNON, ShipParts.Part.RUDDER, ShipParts.Part.RAM, ShipParts.Part.HULL]:
+				var combat := _player.combat
+				combat.apply_raw_damage(part, combat.parts.hp(part) * flee_part_loss)
+			morale_changed.emit(10.0)
+	if log_boarding:
+		print("[接舷] 结束 %s · 气焰 %.1f%% → %.1f%%" % [
+			Result.keys()[result], morale_before * 100.0, _get_morale.call() * 100.0])
+	finished.emit(result)
 
 
-func _tick_stun(real: float) -> void:
-	if _stun_left <= 0.0:
-		return
-	_stun_left -= real
-	if _stun_left <= 0.0:
-		_release_stun()
+func cancel() -> void:
+	if active:
+		_end_fight(0.0, false)
+	elif _camera_tween != null and _camera_tween.is_running():
+		_camera_tween.kill()
+		_restore_camera()
 
 
-func _tick_cooldowns(real: float) -> void:
-	if _cooldowns.is_empty():
-		return
-	for key in _cooldowns.keys():
-		var left := float(_cooldowns[key]) - real
-		if left <= 0.0:
-			_cooldowns.erase(key)
-		else:
-			_cooldowns[key] = left
+func _end_fight(stun_seconds: float, animate_camera: bool = true) -> void:
+	active = false
+	Engine.time_scale = _saved_time_scale
+	_clear_input()
+	_exchange_timer.stop()
+	_decay_timer.stop()
+	_flee_timer.stop()
+	set_process(false)
+	set_process_input(false)
+	_effects.end()
+	if _player.combat != null:
+		_player.combat.damage_float_enabled = true
+	if is_instance_valid(_enemy):
+		_enemy.combat.damage_float_enabled = true
+	if _player.combat.targetable:
+		_player.unlock_after_boarding()
+	if is_instance_valid(_enemy):
+		_start_cooldown(_enemy)
+		_enemy.finish_boarding(stun_seconds)
+	_enemy = null
+	_set_presentation(false, animate_camera)
+	active_changed.emit(false)
 
 
-# ---------------------------------------------------------------- T-406 UI 与相机
+func _start_cooldown(enemy: EnemyShip) -> void:
+	var id := enemy.get_instance_id()
+	if not _cooldowns.has(id):
+		enemy.tree_exiting.connect(func(): _cooldowns.erase(id), CONNECT_ONE_SHOT)
+	_cooldowns[id] = Time.get_ticks_msec() + int(cooldown * 1000.0)
+
+
+func _clear_input() -> void:
+	qte_multiplier = 1.0
+	_space_down = false
+	for action in [&"move_left", &"move_right", &"move_up", &"move_down", &"fire"]:
+		if Input.is_action_pressed(action):
+			Input.action_release(action)
+
+
+func _real_timer(seconds: float, one_shot: bool, callback: Callable) -> Timer:
+	var timer := Timer.new()
+	timer.wait_time = seconds
+	timer.one_shot = one_shot
+	timer.ignore_time_scale = true
+	timer.timeout.connect(callback)
+	add_child(timer)
+	return timer
+
 
 func _build_ui() -> void:
-	_layer = CanvasLayer.new()
-	_layer.name = "BoardingUI"
-	_layer.layer = 20
-	add_child(_layer)
-
-	_prompt = Label.new()
-	_prompt.name = "Prompt"
-	_prompt.add_theme_font_size_override("font_size", 22)
-	_prompt.add_theme_color_override("font_color", Color(1.0, 0.92, 0.72))
-	_prompt.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.03, 0.9))
-	_prompt.add_theme_constant_override("outline_size", 5)
-	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_prompt.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_prompt.position = Vector2(-640, -96)
-	_prompt.size = Vector2(1280, 40)
-	_prompt.visible = false
-	_layer.add_child(_prompt)
-
-	_big = Label.new()
-	_big.name = "Big"
-	_big.add_theme_font_size_override("font_size", 56)
-	_big.add_theme_color_override("font_color", Color(1.0, 0.72, 0.42))
-	_big.add_theme_color_override("font_outline_color", Color(0.08, 0.05, 0.03, 0.9))
-	_big.add_theme_constant_override("outline_size", 8)
-	_big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_big.set_anchors_preset(Control.PRESET_CENTER)
-	_big.position = Vector2(-200, -210)
-	_big.size = Vector2(400, 80)
-	_big.visible = false
-	_layer.add_child(_big)
-
-	_hp = Label.new()
-	_hp.name = "HpLine"
-	_hp.add_theme_font_size_override("font_size", 26)
-	_hp.add_theme_color_override("font_color", Color(0.95, 0.96, 1.0))
-	_hp.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.03, 0.9))
-	_hp.add_theme_constant_override("outline_size", 6)
-	_hp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hp.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_hp.position = Vector2(-640, 34)
-	_hp.size = Vector2(1280, 36)
-	_hp.visible = false
-	_layer.add_child(_hp)
+	var layer := CanvasLayer.new()
+	layer.name = "Interface"
+	layer.layer = 20
+	add_child(layer)
+	_overlay = Control.new()
+	_overlay.name = "Overlay"
+	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_overlay)
+	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_overlay.hide()
+	_player_hull = _add_hull_bar("PlayerHull", -264.0, Color(0.36, 0.74, 0.70))
+	_enemy_hull = _add_hull_bar("EnemyHull", 24.0, Color(0.79, 0.36, 0.28))
+	_prompt = _caption(_overlay, Vector2(0.5, 1.0), Rect2(-440, -66, 880, 40), 22)
+	_impact = _caption(layer, Vector2(0.5, 0.0), Rect2(-160, 92, 320, 74), 52)
+	_impact.hide()
 
 
-func _show_ui(show_it: bool) -> void:
-	_layer.visible = show_it
-	_set_hud_visible(not show_it)
-	if show_it:
-		_update_prompt()
-		_update_hp()
+func _add_hull_bar(id: String, x: float, color: Color) -> ProgressBar:
+	var bar := ProgressBar.new()
+	bar.name = id
+	bar.show_percentage = false
+	bar.step = 0.01
+	var empty := StyleBoxFlat.new()
+	empty.bg_color = Color(0.09, 0.10, 0.14, 0.94)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = color
+	bar.add_theme_stylebox_override(&"background", empty)
+	bar.add_theme_stylebox_override(&"fill", fill)
+	_place(bar, _overlay, Vector2(0.5, 0.0), Rect2(x, 54, 240, 12))
+	_caption(bar, Vector2(0.0, 0.0), Rect2(0, -30, 240, 28), 20).name = "Readout"
+	return bar
+
+
+func _caption(parent: Node, anchor: Vector2, bounds: Rect2, font_size: int) -> Label:
+	var label := Label.new()
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override(&"font_size", font_size)
+	label.add_theme_color_override(&"font_color", Color(1.0, 0.93, 0.77))
+	label.add_theme_color_override(&"font_outline_color", Color(0.06, 0.04, 0.04))
+	label.add_theme_constant_override(&"outline_size", 6)
+	_place(label, parent, anchor, bounds)
+	return label
+
+
+func _place(control: Control, parent: Node, anchor: Vector2, bounds: Rect2) -> void:
+	control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(control)
+	control.anchor_left = anchor.x
+	control.anchor_right = anchor.x
+	control.anchor_top = anchor.y
+	control.anchor_bottom = anchor.y
+	control.offset_left = bounds.position.x
+	control.offset_top = bounds.position.y
+	control.offset_right = bounds.end.x
+	control.offset_bottom = bounds.end.y
+
+
+func _update_ui() -> void:
+	var retreat := "  %.1f / %.1f 秒" % [flee_hold - _flee_timer.time_left, flee_hold] if not _flee_timer.is_stopped() else ""
+	_prompt.text = "连按空格提升战力  ×%.2f    ·    长按 T 撤退%s" % [qte_multiplier, retreat]
+	_update_hull_bar(_player_hull, _player.combat.parts, "我舰")
+	_update_hull_bar(_enemy_hull, _enemy.combat.parts, _enemy.config.display_name)
+
+
+func _update_hull_bar(bar: ProgressBar, parts: ShipParts, title: String) -> void:
+	bar.max_value = parts.max_hp(ShipParts.Part.HULL)
+	bar.value = parts.hp(ShipParts.Part.HULL)
+	bar.get_node("Readout").text = "%s舰体  %.0f / %.0f" % [title + " · " if title != "我舰" else "我方", bar.value, bar.max_value]
+
+
+func _show_impact(message: String) -> void:
+	if _impact_tween != null:
+		_impact_tween.kill()
+	_impact.text = message
+	_impact.show()
+	_impact.modulate.a = 1.0
+	_impact_tween = create_tween().set_ignore_time_scale(true)
+	_impact_tween.tween_interval(0.55)
+	_impact_tween.tween_property(_impact, "modulate:a", 0.0, 0.25)
+	_impact_tween.tween_callback(_impact.hide)
+
+
+func _set_presentation(show_boarding: bool, animate_camera: bool = true) -> void:
+	_overlay.visible = show_boarding
+	if show_boarding:
+		for item in _hud:
+			if item.visible:
+				_hud_hidden.append(item)
+				item.hide()
+		_update_ui()
+		_morale_tween = create_tween().set_ignore_time_scale(true).set_loops()
+		_morale_tween.tween_property(_morale_indicator, "rotation", -0.035, 0.12)
+		_morale_tween.parallel().tween_property(_morale_indicator, "modulate", Color(1.35, 1.18, 0.85), 0.12)
+		_morale_tween.tween_property(_morale_indicator, "rotation", 0.035, 0.12)
+		_morale_tween.parallel().tween_property(_morale_indicator, "modulate", Color.WHITE, 0.12)
 	else:
-		_prompt.visible = false
-		if _hp != null:
-			_hp.visible = false
+		for item in _hud_hidden:
+			item.show()
+		_hud_hidden.clear()
+		_morale_tween.kill()
+		_morale_indicator.rotation = 0.0
+		_morale_indicator.modulate = Color.WHITE
+		_impact_tween.kill()
+		_impact.hide()
+	_animate_camera(show_boarding, animate_camera)
 
 
-func _set_hud_visible(show_it: bool) -> void:
-	if _manager == null:
+func _animate_camera(focus_ships: bool, animate: bool) -> void:
+	if _camera_tween != null:
+		_camera_tween.kill()
+	if focus_ships:
+		if not _camera.enabled:
+			_previous_camera = get_viewport().get_camera_2d()
+			_camera.enabled = true
+			_camera.make_current()
+		_focus = _player.combat.aim_point().lerp(_enemy.combat.aim_point(), 0.5)
+		_position_camera(_camera_weight)
+	elif not animate:
+		_restore_camera()
 		return
-	for path in ["HUD/Status", "HUD/ReloadRing", "HUD/Hint"]:
-		var node := _manager.get_node_or_null(path)
-		if node is CanvasItem:
-			(node as CanvasItem).visible = show_it
-	var cross := _manager.get_node_or_null("Crosshair")
-	if cross is CanvasItem:
-		(cross as CanvasItem).visible = show_it
+	_camera_tween = create_tween().set_ignore_time_scale(true)
+	_camera_tween.tween_method(_position_camera, _camera_weight, 1.0 if focus_ships else 0.0, 0.35)
+	if not focus_ships:
+		_camera_tween.tween_callback(_restore_camera)
 
 
-func _update_prompt() -> void:
-	if not active:
-		return
-	_prompt.visible = true
-	var hold := "" if _flee_left <= 0.0 else "（撤退 %.1f/%.1f 秒）" % [_flee_left, flee_hold]
-	_prompt.text = "接舷战！连按空格提升倍率 ×%.2f    长按 T 撤退%s" % [_qte, hold]
+func _position_camera(weight: float) -> void:
+	_camera_weight = weight
+	var screen := get_viewport().get_visible_rect().size
+	var coverage := maxf(1.0, maxf(screen.x / _map_bounds.size.x, screen.y / _map_bounds.size.y))
+	var zoom := lerpf(coverage, maxf(coverage, camera_zoom), weight)
+	var half_visible := screen / (2.0 * zoom)
+	_camera.zoom = Vector2.ONE * zoom
+	var center := _map_bounds.get_center().lerp(_focus, weight) + _effects.camera_shake() * weight
+	_camera.global_position = center.clamp(
+		_map_bounds.position + half_visible, _map_bounds.end - half_visible)
+	_camera.force_update_scroll()
 
 
-## 接舷中显示双方舰体血量（策划 11-26 反馈）。
-func _update_hp() -> void:
-	if _hp == null or _player == null:
-		return
-	if not active and _enemy == null:
-		return
-	var player_hull: float = _player.combat.parts.hp(ShipParts.Part.HULL)
-	var player_max: float = maxf(_player.combat.parts.max_hp(ShipParts.Part.HULL), 0.001)
-	var line := "我舰 舰体 %.0f / %.0f" % [maxf(player_hull, 0.0), player_max]
-	if _enemy != null and is_instance_valid(_enemy):
-		var enemy_hull: float = _enemy.combat.parts.hp(ShipParts.Part.HULL)
-		var enemy_max: float = maxf(_enemy.combat.parts.max_hp(ShipParts.Part.HULL), 0.001)
-		line += "        敌舰 舰体 %.0f / %.0f" % [maxf(enemy_hull, 0.0), enemy_max]
-	_hp.text = line
-	_hp.visible = true
-
-
-func _show_big(text: String) -> void:
-	_big.text = text
-	_big.visible = true
-	_big.modulate.a = 1.0
-	var tween := create_tween()
-	tween.set_ignore_time_scale(true)
-	tween.tween_interval(big_text_time)
-	tween.tween_property(_big, "modulate:a", 0.0, 0.25)
-	tween.tween_callback(func() -> void: _big.visible = false)
-
-
-func _focus_camera(on_boarding: bool) -> void:
-	if _cam == null:
-		return
-	var tween := create_tween()
-	tween.set_ignore_time_scale(true)
-	if on_boarding:
-		var mid := (_player.global_position + _enemy.global_position) * 0.5
-		_cam.global_position = mid
-		_cam.zoom = Vector2.ONE
-		_cam.enabled = true
-		tween.tween_property(_cam, "zoom", Vector2.ONE * camera_zoom, camera_lerp)
-		tween.parallel().tween_property(_cam, "global_position", mid, camera_lerp)
-	else:
-		tween.tween_property(_cam, "zoom", Vector2.ONE, camera_lerp)
-		tween.tween_callback(func() -> void: _cam.enabled = false)
+func _restore_camera() -> void:
+	_camera.enabled = false
+	_camera_weight = 0.0
+	if is_instance_valid(_previous_camera) and _previous_camera.enabled:
+		_previous_camera.make_current()
+	_previous_camera = null
 
 
 func _exit_tree() -> void:
-	if _saved_time_scale > 0.0:
-		Engine.time_scale = 1.0
+	if active:
+		Engine.time_scale = _saved_time_scale
+		_clear_input()

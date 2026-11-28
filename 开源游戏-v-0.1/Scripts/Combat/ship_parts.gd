@@ -3,10 +3,12 @@ extends RefCounted
 
 signal part_changed(part: Part, hp: float, condition: Condition)
 
+## CANNON 保留为现有资源与脚本中的技术字段，显示名为「火器与弓手」。
 enum Part { SAIL, HULL, CANNON, RUDDER, RAM }
 enum Condition { NORMAL, DAMAGED, DESTROYED }
 enum Ammo { SOLID, ANTI_SAIL, EXPLOSIVE }
 
+const PART_NAMES := ["帆", "舰体", "火器与弓手", "舵", "撞角"]
 const DAMAGE_THRESHOLD := 0.75
 const DESTROYED_THRESHOLD := 0.10
 const SPEED_MULTIPLIERS := [1.0, 0.7, 0.4]
@@ -63,6 +65,14 @@ func condition(part: Part) -> Condition:
 
 func is_sunk() -> bool:
 	return _hp[Part.HULL] <= 0.0
+
+
+## 五个部位当前血量之和：伤害飘字用它算“这一下实际掉了多少”。
+func total_hp() -> float:
+	var total := 0.0
+	for part in Part.values():
+		total += _hp[part]
+	return total
 
 
 func speed_multiplier() -> float:

@@ -3,6 +3,7 @@ extends Node2D
 
 signal sunk
 signal blast_pushed(distance: float)
+signal struck(part: ShipParts.Part, point: Vector2)
 
 enum Team { ALLY, ENEMY }
 
@@ -16,11 +17,15 @@ var lane_index := 0
 var previous_lane := -1
 var min_gap := 0.0
 var targetable := true
-## 望楼锁定期间的整船加伤倍率（1.0 = 没被锁）。
-var damage_taken_multiplier := 1.0
 var size: Vector2
 var sprite_faces_left := false
 var muzzle_offset := Vector2(0.54, -0.08)
+var hit_damage_multiplier := 1.0
+## 伤害飘字开关：接舷战期间由 BoardingFight 关掉，避免逐部位数字糊成一片。
+var damage_float_enabled := true
+## 敌船挨打飘暖黄、我方挨打飘红。
+var damage_float_enemy_tint := Color(1.0, 0.86, 0.35)
+var damage_float_ally_tint := Color(0.95, 0.32, 0.30)
 
 var _hitboxes: Array[CollisionShape2D] = []
 var _hitbox_centers: Array[Vector2] = []
@@ -30,15 +35,22 @@ var _recoil: Tween
 var _hit_flash: Tween
 var _muzzle_flash: Sprite2D
 var _sail_material: ShaderMaterial
+var _sail_uv := Vector4.ZERO
+var hidden_sail_uv := Vector4.ZERO
 var _sail_overlay: Sprite2D
 var _hull_overlay: Sprite2D
 var _sail_torn_texture: Texture2D
 var _sail_ruined_texture: Texture2D
 var _base_tint := Color.WHITE
-## 接舷战里由 BoardingFight 合并成每方一条飘字，这里先关掉逐部位飘字。
-var damage_float_enabled := true
+var _wave_y := 0.0
+var _wave_tilt := 0.0
+var _boarding_offset := Vector2.ZERO
+var _boarding_width := 1.0
+var _part_art: Dictionary[ShipParts.Part, Node2D] = {}
 
-@onready var _sprite: Sprite2D = $Sprite2D
+@onready var _visual: Node2D = $Visual
+@onready var _sprite: Sprite2D = $Visual/Sprite2D
+@onready var _weapon: PlayerWeapon = get_node_or_null("Weapon")
 
 
 func configure(
@@ -96,9 +108,10 @@ func configure_damage_art(torn: Texture2D, ruined: Texture2D, burned: Texture2D,
 		var texture_size := _sprite.texture.get_size()
 		_sail_material = ShaderMaterial.new()
 		_sail_material.shader = SAIL_SHADER
-		_sail_material.set_shader_parameter("sail_region", Vector4(
+		_sail_uv = Vector4(
 			sail_cutout.position.x / texture_size.x, sail_cutout.position.y / texture_size.y,
-			sail_cutout.end.x / texture_size.x, sail_cutout.end.y / texture_size.y))
+			sail_cutout.end.x / texture_size.x, sail_cutout.end.y / texture_size.y)
+		_sail_material.set_shader_parameter("sail_region", _sail_uv)
 		_sprite.material = _sail_material
 	if burned != null:
 		_hull_overlay = Sprite2D.new()
@@ -116,6 +129,7 @@ func _refresh_damage_art(part: ShipParts.Part, _hp: float, condition: ShipParts.
 			var ruined := condition == ShipParts.Condition.DESTROYED
 			if _sail_material != null:
 				_sail_material.set_shader_parameter("sail_destroyed", ruined)
+				hidden_sail_uv = _sail_uv if ruined else Vector4.ZERO
 			if _sail_overlay != null:
 				_sail_overlay.texture = _sail_ruined_texture if ruined else _sail_torn_texture
 				_sail_overlay.visible = condition != ShipParts.Condition.NORMAL and _sail_overlay.texture != null
@@ -146,7 +160,7 @@ func occupies_lane(index: int) -> bool:
 
 
 func hitbox(part: ShipParts.Part) -> Rect2:
-	var box := _hitboxes[part]
+	var box := _hitboxes[_box_index(part)]
 	var box_size := (box.shape as RectangleShape2D).size
 	return box.global_transform * Rect2(-box_size * 0.5, box_size)
 
@@ -159,19 +173,59 @@ func aim_point() -> Vector2:
 	return _hitboxes[ShipParts.Part.HULL].global_position
 
 
-func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float) -> void:
+func visual_sprite() -> Sprite2D:
+	return _sprite
+
+
+## 只有帆/舰体/炮台有三个碰撞箱；舵与撞角按 23-M4 只靠传导或接舷掉血，
+## 取值时退回舰体，避免按索引取箱越界（曾导致 `Out of bounds get index '3'`）。
+func _box_index(part: ShipParts.Part) -> int:
+	var index: int = part
+	if index < 0 or index >= _hitboxes.size() or _hitboxes[index] == null:
+		index = int(ShipParts.Part.HULL)
+	return index
+
+
+func visible_part_position(part: ShipParts.Part) -> Vector2:
+	return _visual.to_global(_hitboxes[_box_index(part)].position)
+
+
+func set_part_art(part: ShipParts.Part, art: Node2D) -> void:
+	_part_art[part] = art
+	art.position = _hitboxes[_box_index(part)].position
+	_visual.add_child(art)
+
+
+func set_wave_pose(offset_y: float, tilt: float) -> void:
+	_wave_y = offset_y
+	_wave_tilt = tilt
+	_apply_visual_pose()
+
+
+func set_boarding_pose(offset: Vector2, width: float) -> void:
+	_boarding_offset = offset
+	_boarding_width = width
+	_apply_visual_pose()
+
+
+func _apply_visual_pose() -> void:
+	var wave := Transform2D(_wave_tilt, Vector2(0.0, _wave_y))
+	var boarding := Transform2D(0.0, Vector2(_boarding_width, 1.0), 0.0, _boarding_offset)
+	_visual.transform = wave * boarding
+	if _weapon != null:
+		_weapon.apply_visual_pose(_visual.transform)
+
+
+func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float, point: Vector2 = Vector2.INF) -> void:
 	if not targetable:
 		return
-	var hp_before := _total_hp()
-	if not parts.apply_hit(part, ammo, damage * damage_taken_multiplier):
+	var hp_before := parts.total_hp()
+	if not parts.apply_hit(part, ammo, damage * hit_damage_multiplier):
 		return
-	_show_damage(part, hp_before - _total_hp())
-	if not targetable:
-		# 部位变化的同步监听可能已经处理了致死伤害。
-		return
-	if parts.is_sunk():
-		targetable = false
-		sunk.emit()
+	var anchor: Vector2 = visible_part_position(part) if point == Vector2.INF else point
+	_float_damage(anchor, hp_before - parts.total_hp())
+	struck.emit(part, anchor)
+	if finish_if_sunk():
 		return
 
 	if _hit_flash != null:
@@ -181,43 +235,38 @@ func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float) -> v
 	_hit_flash.tween_property(_sprite, "self_modulate", Color.WHITE, 0.15)
 
 
-## 接舷战等非弹道来源的直接扣血：不走弹种系数、不触发传导。
-func apply_raw_damage(part: ShipParts.Part, amount: float) -> void:
-	if not targetable or amount <= 0.0 or parts.is_sunk():
+## 接舷直接扣指定部位，仍使用炮击共用的击沉通知。
+func apply_raw_damage(part: ShipParts.Part, damage: float) -> void:
+	if not targetable or parts.is_sunk() or damage <= 0.0:
 		return
-	var hp_before := _total_hp()
-	parts.set_hp(part, parts.hp(part) - amount * damage_taken_multiplier)
-	_show_damage(part, hp_before - _total_hp())
-	if parts.is_sunk():
-		targetable = false
-		sunk.emit()
+	var hp_before := parts.total_hp()
+	parts.set_hp(part, parts.hp(part) - damage)
+	_float_damage(visible_part_position(part), hp_before - parts.total_hp())
+	finish_if_sunk()
 
 
-func _total_hp() -> float:
-	var total := 0.0
-	for part in ShipParts.Part.values():
-		total += parts.hp(part)
-	return total
-
-
-func _show_damage(part: ShipParts.Part, lost: float) -> void:
-	if lost < 1.0 or not damage_float_enabled:
+## 伤害飘字：数字用“受击前后总血量之差”，含弹种系数、部位系数与望楼加成。
+func _float_damage(anchor: Vector2, amount: float) -> void:
+	if not damage_float_enabled or amount < 1.0:
 		return
-	# 舵与撞角没有碰撞箱，飘字落在舰体上。
-	var box_part := part if int(part) < _hitboxes.size() else ShipParts.Part.HULL
-	var tint := Color(1.0, 0.42, 0.38) if team == Team.ALLY else Color(1.0, 0.88, 0.5)
-	DamageFloat.spawn(_float_host(), hitbox(box_part).get_center(), lost, tint)
-
-
-## 飘字挂在场景根上，避免跟随船只的 1/4 缩放一起变小。
-func _float_host() -> Node:
 	var host: Node = get_tree().current_scene
-	if host != null and host.is_ancestor_of(self):
-		return host
-	host = self
-	while host.get_parent() != null and host.get_parent() != get_tree().root:
-		host = host.get_parent()
-	return host
+	if host == null:
+		host = get_parent()
+	if host == null:
+		return
+	var tint := damage_float_enemy_tint if team == Team.ENEMY else damage_float_ally_tint
+	DamageFloat.spawn(host, anchor, amount, tint)
+
+
+func finish_if_sunk() -> bool:
+	# 部位信号的同步监听也可能已经处理了致死伤害。
+	if not targetable:
+		return true
+	if not parts.is_sunk():
+		return false
+	targetable = false
+	sunk.emit()
+	return true
 
 
 func face(heading: float) -> void:
@@ -229,6 +278,9 @@ func face(heading: float) -> void:
 		var center := _hitbox_centers[index]
 		var box := _hitboxes[index]
 		box.position = Vector2(center.x * _heading, center.y)
+		var art := _part_art.get(index as ShipParts.Part) as Node2D
+		if art != null:
+			art.position = box.position
 		var box_size := (box.shape as RectangleShape2D).size
 		var rect := Rect2(box.position - box_size * 0.5, box_size)
 		_hitbox_bounds = rect if index == 0 else _hitbox_bounds.merge(rect)

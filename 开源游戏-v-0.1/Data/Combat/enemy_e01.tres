@@ -1,28 +1,17 @@
-[gd_resource type="Resource" script_class="EnemyShipConfig" format=3 uid="uid://rg3ea0qxu4ma"]
+[gd_resource type="Resource" script_class="EnemyShipConfig" format=3 uid="uid://bw4wnv53bxw7y"]
 
+[ext_resource type="Resource" uid="uid://cnmg2u64bvs2q" path="res://Data/Combat/enemy_parts.tres" id="1_2t1hy"]
 [ext_resource type="Script" uid="uid://bngqvkawgrneb" path="res://Scripts/Combat/enemy_ship_config.gd" id="1_config"]
-[ext_resource type="Texture2D" uid="uid://dv8v6347k8hv4" path="res://Assets/Art/Characters/ship_enemy.png" id="2_ship"]
-[ext_resource type="Script" uid="uid://cmqsf5dmcflaw" path="res://Scripts/Combat/ship_damage_profile.gd" id="3_parts"]
-[ext_resource type="Texture2D" uid="uid://bo50glmjhn5y1" path="res://Assets/Art/Effects/sail_torn_small.png" id="4_torn"]
-[ext_resource type="Texture2D" uid="uid://bgmii3vp8gg3i" path="res://Assets/Art/Effects/sail_ruined_small.png" id="5_ruined"]
-[ext_resource type="Texture2D" uid="uid://sj6qubydlifj" path="res://Assets/Art/Effects/hull_burn_small.png" id="6_burn"]
-
-[sub_resource type="Resource" id="Resource_e01_parts"]
-script = ExtResource("3_parts")
-max_hp = PackedFloat64Array(30, 40, 20, 10, 10)
-sail_box = Rect2(-0.14, -0.39, 0.44, 0.34)
-hull_box = Rect2(-0.465, 0.16, 0.94, 0.29)
-cannon_box = Rect2(-0.32, -0.07, 0.33, 0.24)
+[ext_resource type="Texture2D" uid="uid://sj6qubydlifj" path="res://Assets/Art/Effects/hull_burn_small.png" id="2_0dxe5"]
+[ext_resource type="Texture2D" uid="uid://bgmii3vp8gg3i" path="res://Assets/Art/Effects/sail_ruined_small.png" id="3_moqmc"]
+[ext_resource type="Texture2D" uid="uid://bo50glmjhn5y1" path="res://Assets/Art/Effects/sail_torn_small.png" id="4_8qlw4"]
+[ext_resource type="Texture2D" uid="uid://g5c2kwwugtth" path="res://Assets/Art/Characters/ship_enemy_shared.png" id="6_s1yth"]
 
 [resource]
 script = ExtResource("1_config")
 id = &"E-01"
-display_name = "倭船"
-sprite = ExtResource("2_ship")
-art_keel_ratio = 0.45
-sail_cutout = Rect2(104, 34, 109, 51)
-sail_torn_texture = ExtResource("4_torn")
-sail_ruined_texture = ExtResource("5_ruined")
-hull_burn_texture = ExtResource("6_burn")
-muzzle_offset = Vector2(0.5, 0.07)
-damage_profile = SubResource("Resource_e01_parts")
+display_name = "普通船"
+tint = Color(1, 0.94, 0.35, 1)
+stop_distance = 399.0
+attack_range = 420.0
+part_hp = null

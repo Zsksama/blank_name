@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="EnemyShipConfig" format=3 uid="uid://ctmfc485ak1r5"]
+
+[ext_resource type="Script" uid="uid://bngqvkawgrneb" path="res://Scripts/Combat/enemy_ship_config.gd" id="1"]
+[ext_resource type="Resource" uid="uid://cnmg2u64bvs2q" path="res://Data/Combat/enemy_parts.tres" id="1_13rc8"]
+[ext_resource type="Texture2D" uid="uid://sj6qubydlifj" path="res://Assets/Art/Effects/hull_burn_small.png" id="2_h8p71"]
+[ext_resource type="Texture2D" uid="uid://bgmii3vp8gg3i" path="res://Assets/Art/Effects/sail_ruined_small.png" id="3_dhp7r"]
+[ext_resource type="Texture2D" uid="uid://bo50glmjhn5y1" path="res://Assets/Art/Effects/sail_torn_small.png" id="4_kw5cj"]
+[ext_resource type="Texture2D" uid="uid://g5c2kwwugtth" path="res://Assets/Art/Characters/ship_enemy_shared.png" id="6_1mcsj"]
+
+[resource]
+script = ExtResource("1")
+id = &"E-03"
+display_name = "重船"
+enemy_type = 2
+cost = 8
+tint = Color(1, 0.47, 0.4, 1)
+speed = 10.0
+stop_distance = 437.0
+player_stop_distance = 130.0
+attack_style = 2
+attack_range = 460.0
+attack_damage = 10.0
+boarding_tonnage = 1.5
+boarding_power = 110.0
+part_hp = PackedFloat64Array(50, 110, 30, 10, 30)

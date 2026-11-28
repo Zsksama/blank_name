@@ -3,9 +3,11 @@ extends Area2D
 
 signal fortress_hit(damage: float)
 
+enum Visual { CANNONBALL, ARROW, MATCHLOCK }
+
 const Ballistics := preload("res://Scripts/ballistics.gd")
 
-## 同时接触时先处理帆，再处理炮台和舰体。
+## 同时接触时先处理帆，再处理火器与弓手和舰体。
 const HIT_ORDER := [0, 2, 1]
 const BLAST_PARTS := [ShipParts.Part.SAIL, ShipParts.Part.CANNON, ShipParts.Part.HULL]
 
@@ -39,6 +41,7 @@ var velocity := Vector2(900.0, 0.0)
 var lane_index := 0
 var team := ShipCombat.Team.ALLY
 var ammo := ShipParts.Ammo.SOLID
+var visual := Visual.CANNONBALL
 var lanes: Lanes
 var fortress_bounds: Rect2
 var drag_k := 0.0
@@ -61,6 +64,27 @@ func _ready() -> void:
 		z_index = lanes.content_z(lane_index)
 	if team == ShipCombat.Team.ENEMY:
 		_sprite.modulate = Color(1.0, 0.66, 0.49)
+	match visual:
+		Visual.ARROW:
+			_sprite.hide()
+			_radius = 1.0
+		Visual.MATCHLOCK:
+			_sprite.scale *= 0.55
+			_radius *= 0.55
+			puff_scale *= 0.6
+	if lanes != null and visual != Visual.ARROW:
+		lanes.sea.register_projectile(_sprite, lane_index)
+
+
+func _draw() -> void:
+	if visual != Visual.ARROW:
+		return
+	draw_set_transform(Vector2.ZERO, velocity.angle())
+	draw_line(Vector2(-12, 0), Vector2(4, 0), Color(0.97, 0.83, 0.51), 1.6, true)
+	draw_colored_polygon(PackedVector2Array([Vector2(6, 0), Vector2(1, -2), Vector2(1, 2)]),
+		Color(0.93, 0.92, 0.79))
+	draw_line(Vector2(-12, -2), Vector2(-8, 0), Color(0.95, 0.92, 0.79), 1.2, true)
+	draw_line(Vector2(-12, 2), Vector2(-8, 0), Color(0.95, 0.92, 0.79), 1.2, true)
 
 
 func _physics_process(delta: float) -> void:
@@ -86,10 +110,13 @@ func _physics_process(delta: float) -> void:
 		return
 	global_position = end
 
-	_puff_timer -= delta
-	if _puff_timer <= 0.0:
-		_puff_timer = puff_interval
-		_spawn_puff()
+	if visual == Visual.ARROW:
+		queue_redraw()
+	else:
+		_puff_timer -= delta
+		if _puff_timer <= 0.0:
+			_puff_timer = puff_interval
+			_spawn_puff()
 
 	if end.x < despawn_min_x or end.x > despawn_max_x or end.y < despawn_min_y or end.y > despawn_max_y:
 		queue_free()
@@ -159,7 +186,7 @@ func _resolve_hits(from: Vector2, to: Vector2) -> bool:
 			_stop(point)
 			_explode(point)
 			return true
-		ship.receive_hit(impact.part, ammo, damage)
+		ship.receive_hit(impact.part, ammo, damage, point)
 		if impact.part != ShipParts.Part.SAIL:
 			_stop(point)
 			return true
@@ -189,10 +216,11 @@ func _explode(point: Vector2) -> void:
 			continue
 		for part in BLAST_PARTS:
 			var box := ship.hitbox(part)
-			var distance := point.distance_to(point.clamp(box.position, box.end))
+			var closest := point.clamp(box.position, box.end)
+			var distance := point.distance_to(closest)
 			if distance <= explode_radius:
 				var falloff := lerpf(1.0, 0.5, distance / explode_radius)
-				ship.receive_hit(part, ammo, damage * falloff)
+				ship.receive_hit(part, ammo, damage * falloff, closest)
 		if ship.targetable:
 			var direction := signf(ship.global_position.x - point.x)
 			if is_zero_approx(direction):
