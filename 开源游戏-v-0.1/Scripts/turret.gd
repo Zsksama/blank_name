@@ -1,7 +1,8 @@
-extends Node2D
+class_name FortCannon
+extends Marker2D
 
 var lane_index: int = 0
 
 
 func muzzle_position() -> Vector2:
-	return $Muzzle.global_position
+	return global_position

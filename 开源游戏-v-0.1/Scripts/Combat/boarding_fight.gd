@@ -62,12 +62,12 @@ var _impact: Label
 var _impact_tween: Tween
 var _player_hull: ProgressBar
 var _enemy_hull: ProgressBar
-var _hud_hidden: Array[CanvasItem] = []
+var _crosshair_was_visible := false
 var _morale_tween: Tween
 
 @onready var _player: PlayerShip = $"../PlayerShip"
 @onready var _lanes: Lanes = $"../Lanes"
-@onready var _hud: Array[CanvasItem] = [$"../HUD/Status", $"../HUD/Hint", $"../HUD/ReloadRing", $"../Crosshair"]
+@onready var _crosshair: CanvasItem = $"../Crosshair"
 @onready var _morale_indicator: Control = $"../HUD/Morale"
 
 
@@ -353,10 +353,10 @@ func _build_ui() -> void:
 	layer.add_child(_overlay)
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_overlay.hide()
-	_player_hull = _add_hull_bar("PlayerHull", -264.0, Color(0.36, 0.74, 0.70))
-	_enemy_hull = _add_hull_bar("EnemyHull", 24.0, Color(0.79, 0.36, 0.28))
+	_player_hull = _add_hull_bar("PlayerHull", -292.0, Color(0.36, 0.74, 0.70))
+	_enemy_hull = _add_hull_bar("EnemyHull", 52.0, Color(0.79, 0.36, 0.28))
 	_prompt = _caption(_overlay, Vector2(0.5, 1.0), Rect2(-440, -66, 880, 40), 22)
-	_impact = _caption(layer, Vector2(0.5, 0.0), Rect2(-160, 92, 320, 74), 52)
+	_impact = _caption(layer, Vector2(0.5, 0.0), Rect2(-160, 141, 320, 74), 52)
 	_impact.hide()
 
 
@@ -428,10 +428,8 @@ func _show_impact(message: String) -> void:
 func _set_presentation(show_boarding: bool, animate_camera: bool = true) -> void:
 	_overlay.visible = show_boarding
 	if show_boarding:
-		for item in _hud:
-			if item.visible:
-				_hud_hidden.append(item)
-				item.hide()
+		_crosshair_was_visible = _crosshair.visible
+		_crosshair.hide()
 		_update_ui()
 		_morale_tween = create_tween().set_ignore_time_scale(true).set_loops()
 		_morale_tween.tween_property(_morale_indicator, "rotation", -0.035, 0.12)
@@ -439,9 +437,7 @@ func _set_presentation(show_boarding: bool, animate_camera: bool = true) -> void
 		_morale_tween.tween_property(_morale_indicator, "rotation", 0.035, 0.12)
 		_morale_tween.parallel().tween_property(_morale_indicator, "modulate", Color.WHITE, 0.12)
 	else:
-		for item in _hud_hidden:
-			item.show()
-		_hud_hidden.clear()
+		_crosshair.visible = _crosshair_was_visible
 		_morale_tween.kill()
 		_morale_indicator.rotation = 0.0
 		_morale_indicator.modulate = Color.WHITE

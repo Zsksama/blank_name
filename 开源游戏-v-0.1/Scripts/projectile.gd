@@ -44,6 +44,7 @@ var ammo := ShipParts.Ammo.SOLID
 var visual := Visual.CANNONBALL
 var lanes: Lanes
 var fortress_bounds: Rect2
+var fortress_sections: Array[Rect2] = []
 var drag_k := 0.0
 var pierce_left := 0
 var pierce_damage_falloff := 0.6
@@ -53,6 +54,7 @@ var explosion_owner: ShipCombat
 
 var _puff_timer := 0.0
 var _spent := false
+var _fortress_edge_x := INF
 var _hit_parts: Dictionary[int, int] = {}
 
 @onready var _sprite: Sprite2D = $Sprite2D
@@ -74,6 +76,12 @@ func _ready() -> void:
 			puff_scale *= 0.6
 	if lanes != null and visual != Visual.ARROW:
 		lanes.sea.register_projectile(_sprite, lane_index)
+
+
+## 堡炮出膛时先绘制在敌台上方，飞出堡面后回到所属航道。
+func draw_over_fortress(edge_x: float, fort_z: int) -> void:
+	_fortress_edge_x = edge_x
+	z_index = fort_z + 1
 
 
 func _draw() -> void:
@@ -109,6 +117,9 @@ func _physics_process(delta: float) -> void:
 			lanes.splash_at(lane_index, lanes.to_local(end).x)
 		return
 	global_position = end
+	if end.x >= _fortress_edge_x:
+		_fortress_edge_x = INF
+		z_index = lanes.content_z(lane_index)
 
 	if visual == Visual.ARROW:
 		queue_redraw()
@@ -148,9 +159,7 @@ func _resolve_hits(from: Vector2, to: Vector2) -> bool:
 	if lanes == null:
 		return false
 	var motion := to - from
-	var fortress_entry := -1.0
-	if team == ShipCombat.Team.ENEMY and fortress_bounds.has_area():
-		fortress_entry = _entry_fraction(from, motion, fortress_bounds.grow(_radius))
+	var fortress_entry := _first_fortress_entry(from, motion)
 
 	var impacts: Array[Impact] = []
 	for ship in lanes.targets_in_lane(lane_index, team):
@@ -199,6 +208,20 @@ func _resolve_hits(from: Vector2, to: Vector2) -> bool:
 		fortress_hit.emit(damage)
 		return true
 	return false
+
+
+func _first_fortress_entry(from: Vector2, motion: Vector2) -> float:
+	if team != ShipCombat.Team.ENEMY or not fortress_bounds.has_area():
+		return -1.0
+	var outer := _entry_fraction(from, motion, fortress_bounds.grow(_radius))
+	if outer < 0.0 or fortress_sections.is_empty():
+		return outer
+	var first := INF
+	for section in fortress_sections:
+		var entry := _entry_fraction(from, motion, section.grow(_radius))
+		if entry >= 0.0:
+			first = minf(first, entry)
+	return -1.0 if is_inf(first) else first
 
 
 func _explode(point: Vector2) -> void:

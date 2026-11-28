@@ -1,20 +1,42 @@
 [gd_scene format=3 uid="uid://cah7cxuq4d2et"]
 
 [ext_resource type="Script" path="res://Scripts/fortress.gd" id="1_fort"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_intact.png" id="2_intact"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_damaged.png" id="3_damaged"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_broken.png" id="4_broken"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_gone.png" id="5_gone"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_coastal_intact.png" id="2_intact"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_coastal_damaged.png" id="3_damaged"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_coastal_broken.png" id="4_broken"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Environment/fort_coastal_open.png" id="5_gone"]
 [ext_resource type="Script" path="res://Scripts/Combat/watchtower.gd" id="6_watch"]
+[ext_resource type="Script" path="res://Scripts/fort_wall.gd" id="7_wall"]
+
+[sub_resource type="AtlasTexture" id="Atlas_intact"]
+atlas = ExtResource("2_intact")
+region = Rect2(0, 0, 112, 360)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="Atlas_damaged"]
+atlas = ExtResource("3_damaged")
+region = Rect2(0, 0, 296, 941)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="Atlas_broken"]
+atlas = ExtResource("4_broken")
+region = Rect2(0, 0, 296, 941)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="Atlas_open"]
+atlas = ExtResource("5_gone")
+region = Rect2(0, 0, 296, 941)
+filter_clip = true
 
 [node name="Fortress" type="Node2D" unique_id=1402792039]
 z_index = 50
 script = ExtResource("1_fort")
-damage_textures = Array[Texture2D]([ExtResource("2_intact"), ExtResource("3_damaged"), ExtResource("4_broken"), ExtResource("5_gone")])
+damage_textures = Array[AtlasTexture]([SubResource("Atlas_intact"), SubResource("Atlas_damaged"), SubResource("Atlas_broken"), SubResource("Atlas_open")])
 
-[node name="FortVisual" type="Sprite2D" parent="." unique_id=1053245330]
-position = Vector2(30, 432)
-texture = ExtResource("2_intact")
+[node name="FortVisual" type="Node2D" parent="." unique_id=1053245330]
+texture_filter = 1
+script = ExtResource("7_wall")
+texture = SubResource("Atlas_intact")
 
 [node name="Watchtower" type="Node2D" parent="."]
 script = ExtResource("6_watch")

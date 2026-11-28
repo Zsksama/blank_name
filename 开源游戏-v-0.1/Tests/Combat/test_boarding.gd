@@ -232,6 +232,7 @@ func _test_victory_and_respawns() -> void:
 		float(battle.enemy_total - 1) / float(battle.enemy_total) - 0.25),
 		"The ship's morale penalty completes over two seconds on top of the boarding penalty")
 	battle.gate_launch_time = 0.2
+	var launch_point: Vector2 = battle._gate_approach(player.combat.size.x)
 	for index in range(3):
 		Engine.time_scale = 0.5 if index == 0 else 1.0
 		player.position.x = 500.0
@@ -242,11 +243,11 @@ func _test_victory_and_respawns() -> void:
 		_check(not player.combat.targetable and results.size() == index + 2 and results.back() == 2,
 			"Boarding loss %d runs the shared sinking flow" % (index + 1))
 		await create_timer(0.085, true, false, true).timeout
-		_check(not player.combat.targetable and player.position.x < 60.0,
+		_check(not player.combat.targetable and player.position.x < battle._gate_entrance().x,
 			"Relaunch %d starts behind the water gate" % (index + 1))
 		await create_timer(0.46 if index == 0 else 0.24, true, false, true).timeout
 		_check(player.combat.targetable and not player.controls_locked and player.lane_index == battle.water_gate_lane
-			and absf(player.position.x - 124.25) < 1.0 and player.combat.parts.hp(ShipParts.Part.HULL) == 100.0,
+			and player.global_position.distance_to(launch_point) < 1.0 and player.combat.parts.hp(ShipParts.Part.HULL) == 100.0,
 			"The water gate relaunches the ship after loss %d" % (index + 1))
 		foe.free()
 	_check(battle.lamp_value == 30 and is_equal_approx(battle.morale_bias, -0.25),
@@ -258,8 +259,10 @@ func _test_camera_and_cooldown() -> void:
 	var battle = _battle()
 	var player := battle.get_node("PlayerShip") as PlayerShip
 	var boarding = battle.get_node("Boarding")
-	var enemy: EnemyShip = battle.spawn_enemy(player.lane_index, null, 124.25)
-	player.position.x = 124.25
+	var lanes := battle.get_node("Lanes") as Lanes
+	var approach: Vector2 = battle._gate_approach(player.combat.size.x)
+	var enemy: EnemyShip = battle.spawn_enemy(player.lane_index, null, approach.x)
+	player.position.x = approach.x
 	Engine.time_scale = 0.8
 	battle._check_boarding(0.0)
 	await create_timer(0.40, true, false, true).timeout
@@ -271,7 +274,7 @@ func _test_camera_and_cooldown() -> void:
 	_key(KEY_T, true)
 	await create_timer(1.1, true, false, true).timeout
 	_key(KEY_T, false)
-	_check(not boarding.active and player.position.x > 98.0 and player.position.x < 99.0
+	_check(not boarding.active and absf(player.position.x - lanes.sea_left - player.combat.size.x * 0.5) < 1.0
 		and is_equal_approx(Engine.time_scale, 0.8), "Escape stops at the sea wall and restores the previous time scale")
 	await create_timer(0.4, true, false, true).timeout
 	_check(root.get_camera_2d() == null, "The normal world camera returns after the effect ends")

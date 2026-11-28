@@ -3,7 +3,7 @@ extends Node2D
 
 signal sunk
 signal blast_pushed(distance: float)
-signal struck(part: ShipParts.Part, point: Vector2)
+signal struck(part: ShipParts.Part, point: Vector2, hp_loss: float)
 
 enum Team { ALLY, ENEMY }
 
@@ -203,9 +203,12 @@ func _apply_visual_pose() -> void:
 
 
 func receive_hit(part: ShipParts.Part, ammo: ShipParts.Ammo, damage: float, point: Vector2 = Vector2.INF) -> void:
-	if not targetable or not parts.apply_hit(part, ammo, damage * hit_damage_multiplier):
+	if not targetable:
 		return
-	struck.emit(part, visible_part_position(part) if point == Vector2.INF else point)
+	var previous_hp := parts.hp(part)
+	if not parts.apply_hit(part, ammo, damage * hit_damage_multiplier):
+		return
+	struck.emit(part, visible_part_position(part) if point == Vector2.INF else point, previous_hp - parts.hp(part))
 	if finish_if_sunk():
 		return
 

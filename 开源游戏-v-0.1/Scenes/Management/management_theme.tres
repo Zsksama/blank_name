@@ -1,5 +1,12 @@
 [gd_resource type="Theme" format=3 uid="uid://c2m3sd12rpfcb"]
 
+[ext_resource type="Texture2D" path="res://Assets/Art/UI/Management/top.png" id="1_top"]
+[ext_resource type="Texture2D" path="res://Assets/Art/UI/Management/left.png" id="2_left"]
+[ext_resource type="Texture2D" path="res://Assets/Art/UI/Management/right.png" id="3_right"]
+[ext_resource type="Texture2D" path="res://Assets/Art/UI/Management/juqing.png" id="4_story"]
+[ext_resource type="Texture2D" path="res://Assets/Art/UI/Management/mingjin_rili.png" id="5_footer"]
+[ext_resource type="Texture2D" path="res://Assets/Art/UI/Management/xuanxiang.png" id="6_choice"]
+
 [sub_resource type="StyleBoxFlat" id="Button_disabled"]
 content_margin_left = 10.0
 content_margin_top = 5.0
@@ -24,7 +31,7 @@ border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.16, 0.389, 0.37, 1)
+border_color = Color(0.66, 0.24, 0.08, 1)
 corner_radius_top_left = 5
 corner_radius_top_right = 5
 corner_radius_bottom_right = 5
@@ -163,18 +170,107 @@ corner_radius_bottom_left = 10
 corner_detail = 1
 anti_aliasing = false
 
-[sub_resource type="StyleBoxFlat" id="Story_frame"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-bg_color = Color(0.96, 0.922, 0.813, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.141, 0.177, 0.165, 1)
-anti_aliasing = false
+[sub_resource type="StyleBoxTexture" id="Status_frame"]
+content_margin_left = 30.0
+content_margin_top = 10.0
+content_margin_right = 30.0
+content_margin_bottom = 10.0
+texture = ExtResource("1_top")
+texture_margin_left = 32.0
+texture_margin_top = 12.0
+texture_margin_right = 32.0
+texture_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxTexture" id="Navigation_frame"]
+content_margin_left = 18.0
+content_margin_top = 36.0
+content_margin_right = 20.0
+content_margin_bottom = 17.0
+texture = ExtResource("2_left")
+texture_margin_left = 53.0
+texture_margin_top = 53.0
+texture_margin_right = 53.0
+texture_margin_bottom = 53.0
+
+[sub_resource type="StyleBoxTexture" id="Ledger_frame"]
+content_margin_left = 20.0
+content_margin_top = 35.0
+content_margin_right = 17.0
+content_margin_bottom = 17.0
+texture = ExtResource("3_right")
+texture_margin_left = 53.0
+texture_margin_top = 53.0
+texture_margin_right = 53.0
+texture_margin_bottom = 53.0
+
+[sub_resource type="StyleBoxTexture" id="Story_frame"]
+content_margin_left = 16.0
+content_margin_top = 17.0
+content_margin_right = 16.0
+content_margin_bottom = 12.0
+texture = ExtResource("4_story")
+texture_margin_left = 13.0
+texture_margin_top = 13.0
+texture_margin_right = 13.0
+texture_margin_bottom = 13.0
+
+[sub_resource type="StyleBoxTexture" id="Footer_frame"]
+content_margin_left = 18.0
+content_margin_top = 11.0
+content_margin_right = 18.0
+content_margin_bottom = 17.0
+texture = ExtResource("5_footer")
+texture_margin_left = 13.0
+texture_margin_top = 13.0
+texture_margin_right = 13.0
+texture_margin_bottom = 13.0
+
+[sub_resource type="StyleBoxTexture" id="Choice_idle"]
+content_margin_left = 14.0
+content_margin_top = 0.0
+content_margin_right = 14.0
+content_margin_bottom = 0.0
+texture = ExtResource("6_choice")
+texture_margin_left = 23.0
+texture_margin_top = 14.0
+texture_margin_right = 23.0
+texture_margin_bottom = 14.0
+
+[sub_resource type="StyleBoxTexture" id="Choice_hover"]
+content_margin_left = 14.0
+content_margin_top = 0.0
+content_margin_right = 14.0
+content_margin_bottom = 0.0
+texture = ExtResource("6_choice")
+texture_margin_left = 23.0
+texture_margin_top = 14.0
+texture_margin_right = 23.0
+texture_margin_bottom = 14.0
+modulate_color = Color(1, 0.95, 0.8, 1)
+
+[sub_resource type="StyleBoxTexture" id="Choice_selected"]
+content_margin_left = 14.0
+content_margin_top = 0.0
+content_margin_right = 14.0
+content_margin_bottom = 0.0
+texture = ExtResource("6_choice")
+texture_margin_left = 23.0
+texture_margin_top = 14.0
+texture_margin_right = 23.0
+texture_margin_bottom = 14.0
+modulate_color = Color(0.98, 0.79, 0.63, 1)
+
+[sub_resource type="StyleBoxTexture" id="Choice_disabled"]
+content_margin_left = 14.0
+content_margin_top = 0.0
+content_margin_right = 14.0
+content_margin_bottom = 0.0
+texture = ExtResource("6_choice")
+texture_margin_left = 23.0
+texture_margin_top = 14.0
+texture_margin_right = 23.0
+texture_margin_bottom = 14.0
+modulate_color = Color(0.8, 0.75, 0.71, 0.64)
 
 [sub_resource type="StyleBoxLine" id="Vertical_rule"]
 color = Color(0.42, 0.458, 0.405, 0.55)
@@ -199,6 +295,7 @@ Button/styles/normal = SubResource("Button_idle")
 Button/styles/pressed = SubResource("Button_selected")
 HSeparator/styles/separator = SubResource("Horizontal_rule")
 Heading/base_type = &"Label"
+Heading/colors/font_color = Color(0.27, 0.08, 0.034, 1)
 Heading/font_sizes/font_size = 26
 Heading/fonts/font = SubResource("Font_heading")
 Label/colors/font_color = Color(0.141, 0.177, 0.165, 1)
@@ -216,7 +313,7 @@ Seal/colors/font_color = Color(1, 0.973, 0.9, 1)
 Seal/colors/font_focus_color = Color(1, 0.973, 0.9, 1)
 Seal/colors/font_hover_color = Color(1, 0.973, 0.9, 1)
 Seal/colors/font_pressed_color = Color(1, 0.973, 0.9, 1)
-Seal/font_sizes/font_size = 30
+Seal/font_sizes/font_size = 25
 Seal/fonts/font = SubResource("Font_heading")
 Seal/styles/hover = SubResource("Seal_hover")
 Seal/styles/normal = SubResource("Seal")
@@ -224,3 +321,17 @@ Seal/styles/pressed = SubResource("Seal")
 Story/base_type = &"PanelContainer"
 Story/styles/panel = SubResource("Story_frame")
 VSeparator/styles/separator = SubResource("Vertical_rule")
+Choice/base_type = &"Button"
+Choice/styles/disabled = SubResource("Choice_disabled")
+Choice/styles/hover = SubResource("Choice_hover")
+Choice/styles/hover_pressed = SubResource("Choice_selected")
+Choice/styles/normal = SubResource("Choice_idle")
+Choice/styles/pressed = SubResource("Choice_selected")
+FooterFrame/base_type = &"PanelContainer"
+FooterFrame/styles/panel = SubResource("Footer_frame")
+LedgerFrame/base_type = &"PanelContainer"
+LedgerFrame/styles/panel = SubResource("Ledger_frame")
+NavigationFrame/base_type = &"PanelContainer"
+NavigationFrame/styles/panel = SubResource("Navigation_frame")
+StatusFrame/base_type = &"PanelContainer"
+StatusFrame/styles/panel = SubResource("Status_frame")

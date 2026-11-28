@@ -102,7 +102,8 @@ func _run() -> void:
 		_expect(not weapon.can_fire() and weapon.switch_lock == 1.5, "Switching ammo locks both guns")
 		weapon._update_reload(1.5)
 		weapon.toggle_fire_mode()
-		_expect((battle.get_node("HUD/Status") as Label).text.contains("齐射"), "The HUD displays the selected fire mode")
+		await create_timer(0.2).timeout
+		_expect(battle.get_node("HUD/Mode/Selection").position.x == 0.0, "The HUD highlights the selected salvo mode")
 		weapon.try_fire()
 		var volley: Array[Projectile] = []
 		for shot in battle.get_node("Projectiles").get_children():
@@ -199,26 +200,56 @@ func _test_fortress_integration() -> void:
 	current_scene = battle
 	var player: PlayerShip = battle.get_node("PlayerShip")
 	var weapon = player.get_node("Combat/Weapon")
-	var fortress: Sprite2D = battle.get_node_or_null("Fortress/FortVisual")
-	_expect(fortress != null and fortress.texture.resource_path.ends_with("fort_intact.png"),
+	var lanes: Lanes = battle.get_node("Lanes")
+	var fortress: FortWall = battle.get_node_or_null("Fortress/FortVisual")
+	var entrance: Vector2 = battle._gate_entrance()
+	_expect(fortress != null and (fortress.texture as AtlasTexture).atlas.resource_path.ends_with("fort_coastal_intact.png"),
 		"The normal battle scene uses the imported fortress art")
-	_expect(player.position.x < 60.0 and not weapon.can_fire(), "The first ship sails out through the water gate")
+	_expect(fortress != null and is_equal_approx(fortress.scale.x, fortress.scale.y),
+		"The wall has no nonuniform sprite transform")
+	var left_wall: CollisionShape2D = battle.get_node("Walls/WallLeft/CollisionShape2D")
+	var wall_width := (left_wall.shape as RectangleShape2D).size.x
+	_expect(is_equal_approx(lanes.sea_left, 224.0)
+		and is_equal_approx(left_wall.global_position.x + wall_width * 0.5, lanes.sea_left),
+		"The navigation and physics boundaries align with the reference fort's 224 px outer edge")
+	_expect(entrance.is_equal_approx(Vector2(154.0, 444.0)),
+		"The shoreline route meets the original water arch at its reference position")
+	_expect(battle._turrets.all(func(cannon): return cannon is Marker2D and cannon.get_child_count() == 0),
+		"Fort cannon slots contain no separate artwork")
+	var muzzles: Array = battle._turrets.map(func(cannon): return cannon.muzzle_position())
+	_expect(muzzles == [Vector2(202, 172), Vector2(206, 276), Vector2(208, 540), Vector2(206, 660)],
+		"The four muzzle markers match the annotated seaward bastion faces")
+	_expect(player.position.x < entrance.x and is_equal_approx(player.position.y, entrance.y) and not weapon.can_fire(),
+		"The first ship starts inside the water arch along its sill")
 	if fortress == null:
 		current_scene = null
 		battle.free()
 		return
 
 	await create_timer(battle.gate_launch_time + 0.08).timeout
+	_expect(player.position.x - player.combat.size.x * 0.5 > lanes.sea_left
+		and is_equal_approx(player.position.y, lanes.lane_bottom_y(battle.water_gate_lane)),
+		"The player clears the whole lower bastion before joining the central waterline")
+	var gate_y := lanes.lane_center_y(battle.water_gate_lane)
+	var gate_hits: Array[float] = []
+	var shell: Projectile = battle.launch_projectile(Vector2(240.0, gate_y), Vector2(-200.0, 0.0),
+		battle.water_gate_lane, ShipCombat.Team.ENEMY, 0.0, ShipParts.Ammo.SOLID, 0.0)
+	shell.fortress_hit.connect(func(damage: float): gate_hits.append(damage))
+	shell._physics_process(0.25)
+	_expect(gate_hits.is_empty(), "An incoming shot can cross the recessed gate's outer water")
+	shell._physics_process(0.25)
+	_expect(gate_hits.size() == 1 and is_equal_approx(shell.global_position.x, 156.0 + shell._radius),
+		"The shot strikes the visible gate face before reaching the wall interior")
 	var tiers: Array[int] = []
 	battle.on_fort_damaged_tier.connect(func(tier: int): tiers.append(tier))
 	var start_light: int = battle.lamp_value
 	battle._on_fortress_hit(160.0)
-	_expect(fortress.texture.resource_path.ends_with("fort_damaged.png") and battle.lamp_value == start_light - 8,
+	_expect((fortress.texture as AtlasTexture).atlas.resource_path.ends_with("fort_coastal_damaged.png") and battle.lamp_value == start_light - 8,
 		"The 60 percent tier updates art and light immediately")
 	battle.fortress_hp += 10.0
 	battle._on_fortress_hit(10.0)
 	battle._on_fortress_hit(140.0)
-	_expect(tiers == [1, 2] and fortress.texture.resource_path.ends_with("fort_broken.png")
+	_expect(tiers == [1, 2] and (fortress.texture as AtlasTexture).atlas.resource_path.ends_with("fort_coastal_broken.png")
 		and battle.lamp_value == start_light - 20, "The 25 percent tier charges once, even across a repeated crossing")
 
 	var ammo: Array[int] = weapon.ammo.duplicate()
@@ -226,7 +257,7 @@ func _test_fortress_integration() -> void:
 	player.combat.receive_hit(ShipParts.Part.HULL, ShipParts.Ammo.SOLID, 100.0)
 	_expect(not battle.is_over and not player.combat.targetable, "Sinking leaves the battle running")
 	await create_timer(battle.player_respawn_delay + 0.05).timeout
-	_expect(player.lane_index == battle.water_gate_lane and player.position.x < 60.0 and not weapon.can_fire(),
+	_expect(player.lane_index == battle.water_gate_lane and player.position.x < entrance.x and not weapon.can_fire(),
 		"A sunk player respawns inside the gate and sails out before it can fire")
 	await create_timer(battle.gate_launch_time).timeout
 	_expect(player.combat.targetable and weapon.ammo[0] == ammo[0] - 1,
@@ -241,7 +272,7 @@ func _test_fortress_integration() -> void:
 	battle.on_battle_finished.connect(func(won: bool, _breach: bool): finished.append(won))
 	battle.end_delay = 0.0
 	battle._on_fortress_hit(100.0)
-	_expect(battle.is_over and not weapon.can_fire() and fortress.texture.resource_path.ends_with("fort_gone.png"),
+	_expect(battle.is_over and not weapon.can_fire() and (fortress.texture as AtlasTexture).atlas.resource_path.ends_with("fort_coastal_open.png"),
 		"A breach immediately reveals the open gate and locks player controls")
 	_expect(finished.is_empty() and tiers == [1, 2, 3], "Defeat is recorded after the entrance, with the breach tier charged once")
 	battle._on_fortress_hit(100.0)
@@ -281,7 +312,8 @@ func _test_fortress_fire_and_ending() -> void:
 	current_scene = battle
 	battle.set_physics_process(false)
 	var player: PlayerShip = battle.get_node("PlayerShip")
-	player.sail_from_gate(0, 350.0, 350.0, 0.0)
+	player._set_gate_lane(0)
+	player.position.x = 350.0
 	var nearer: EnemyShip = battle.spawn_enemy(0)
 	nearer.position.x = 380.0
 	var farther: EnemyShip = battle.spawn_enemy(0)
@@ -294,10 +326,27 @@ func _test_fortress_fire_and_ending() -> void:
 	if projectiles.get_child_count() == 1:
 		var shell: Projectile = projectiles.get_child(0)
 		_expect(shell.arc_gravity == 0.0 and shell.lane_index == 0, "The fortress fires a straight shell in its own lane")
-		shell._physics_process(2.5)
+		_expect(shell.global_position.is_equal_approx(battle._turrets[0].muzzle_position())
+			and shell.z_index > battle.get_node("Fortress").z_index,
+			"A fortress shell appears at its inset muzzle over the bastion")
+		shell._physics_process(0.32)
+		_expect(shell.z_index == shell.lanes.content_z(shell.lane_index),
+			"The fortress shell returns to the lane draw order beyond the bastion")
+		shell._physics_process(2.18)
 		_expect(nearer.combat.parts.hp(ShipParts.Part.HULL) < 40.0 and farther.combat.parts.hp(ShipParts.Part.HULL) == 40.0
 			and player.combat.parts.hp(ShipParts.Part.HULL) == 100.0 and gate_enemy.combat.parts.hp(ShipParts.Part.HULL) == 40.0,
 			"Fortress fire hits the foremost enemy and passes through the allied ship")
+	for lane in [1, 3, 4]:
+		battle.spawn_enemy(lane, null, 520.0)
+	for index in range(1, battle._turret_timers.size()):
+		battle._turret_timers[index] = 0.0
+	battle._update_turrets(0.0)
+	var origins: Array[Vector2] = []
+	for shell: Projectile in projectiles.get_children().filter(func(node): return node is Projectile):
+		if not shell.is_queued_for_deletion():
+			origins.append(shell.global_position)
+	_expect(origins == [Vector2(206, 276), Vector2(208, 540), Vector2(206, 660)],
+		"The remaining lanes also launch their shells directly from the marked stone faces")
 	var ending := [0]
 	battle.ending_reached.connect(func(): ending[0] += 1)
 	battle._on_fortress_hit(400.0)
@@ -329,6 +378,10 @@ func _test_next_battle_upgrades() -> void:
 	var player: PlayerShip = battle.get_node("PlayerShip")
 	_expect(battle.fortress_hp_cap == 480.0 and battle.turret_lanes.has(battle.water_gate_lane),
 		"A fortress upgrade adds durability and a cannon in the water-gate lane")
+	var gate_cannon: FortCannon = battle._turrets[4]
+	_expect(gate_cannon.lane_index == battle.water_gate_lane
+		and gate_cannon.muzzle_position() == Vector2(200.0, 294.0),
+		"The gate lane upgrade fires from the lower part of the second marked face")
 	_expect(player.combat.parts.max_hp(ShipParts.Part.HULL) == 110.0,
 		"A ship upgrade increases durability in actual combat")
 	battle._on_fortress_hit(40.0)

@@ -16,6 +16,7 @@ static var _default_surface: Texture2D
 @export var reflections_enabled := true
 @export var fade_wave_in_boarding := false
 @export var surface_texture: Texture2D
+@export var draw_to_left_edge := false
 @export_range(0.0, 1.0, 0.01) var reflection_opacity := 0.32
 
 
@@ -58,6 +59,7 @@ var _profile_texture: ImageTexture
 var _surface_material: ShaderMaterial
 var _reflection_materials: Array[ShaderMaterial] = []
 var _segments: int
+var _left_vertex := 0
 var _step_x: float
 var _clock := 0.0
 var _amplitude_scale := 1.0
@@ -88,6 +90,7 @@ func rebuild(lanes: Lanes) -> void:
 	var width := maxf(1.0, lanes.sea_right - lanes.sea_left)
 	_segments = maxi(1, roundi(width / POINT_SPACING))
 	_step_x = width / _segments
+	_left_vertex = int(draw_to_left_edge and lanes.sea_left > 0.0)
 	if surface_texture == null and _default_surface == null:
 		_default_surface = _make_water_texture()
 	var fill := surface_texture if surface_texture != null else _default_surface
@@ -165,6 +168,11 @@ func ship_hit(lane: int, world_point: Vector2, part: ShipParts.Part) -> void:
 		_rows[lane + 1].spray.debris(to_local(world_point), part)
 
 
+func rain_impact(lane: int, x: float) -> void:
+	if waves_enabled:
+		_rows[lane + 1].spray.splash(Vector2(x, surface_y(lane, x)), 2, 0.22)
+
+
 func _add_waterline(index: int, fill: Texture2D) -> void:
 	var row := Waterline.new()
 	var depth := float(index - 1) / maxf(1.0, _lanes.lane_count - 1.0)
@@ -173,7 +181,7 @@ func _add_waterline(index: int, fill: Texture2D) -> void:
 	row.speed = 0.18 if index == 0 else lerpf(0.58, 1.44, depth)
 	row.points.resize(_segments + 1)
 	row.pressure.resize(_segments + 1)
-	row.band_points.resize(2 * (_segments + 1))
+	row.band_points.resize(2 * (row.points.size() + _left_vertex))
 	row.band = Polygon2D.new()
 	row.band.name = "WaterBand%d" % index
 	row.band.z_index = _lanes.content_z(0) - 2 if index == 0 else _lanes.content_z(index - 1) + 1
@@ -201,12 +209,13 @@ func _set_band_tint(row: Waterline, index: int, alpha: float) -> void:
 	var far := tint.lightened(0.12)
 	var near := tint.darkened(0.08)
 	var colors := PackedColorArray()
-	colors.resize(2 * (_segments + 1))
+	var point_count := row.points.size() + _left_vertex
+	colors.resize(2 * point_count)
 	var top := Color(far.lerp(near, depth), alpha)
 	var bottom := Color(far.lerp(near, next), alpha)
-	for point in range(_segments + 1):
+	for point in range(point_count):
 		colors[point] = top
-		colors[point + _segments + 1] = bottom
+		colors[point + point_count] = bottom
 	row.band.vertex_colors = colors
 
 
@@ -330,15 +339,20 @@ func _update_geometry() -> void:
 		texture_scale = surface_texture.get_size() / Vector2(
 			_lanes.sea_right - _lanes.sea_left, _lanes.sea_bottom - _lanes.sea_top)
 	var texture_origin := Vector2(_lanes.sea_left, _lanes.sea_top)
-	var point_count := _segments + 1
+	var point_count := _segments + 1 + _left_vertex
 	for row_index in range(_rows.size()):
 		var row := _rows[row_index]
-		for index in range(point_count):
+		for index in range(row.points.size()):
 			var bottom := _band_bottom(row_index, index)
 			var top := row.points[index]
 			top.y = minf(top.y, bottom.y - 0.5)
-			row.band_points[index] = top
-			row.band_points[2 * point_count - 1 - index] = bottom
+			var vertex := index + _left_vertex
+			row.band_points[vertex] = top
+			row.band_points[2 * point_count - 1 - vertex] = bottom
+		# Extend the polygon underneath the masonry without moving the waterline samples.
+		if _left_vertex == 1:
+			row.band_points[0] = Vector2(0.0, row.band_points[1].y)
+			row.band_points[-1] = Vector2(0.0, row.band_points[-2].y)
 		row.band.polygon = row.band_points
 		var uv := row.band_points.duplicate()
 		for index in range(uv.size()):

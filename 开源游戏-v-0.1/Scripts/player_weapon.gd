@@ -49,6 +49,8 @@ var _turret_sprites: Array[Sprite2D] = []
 var _muzzle_points: Array[Vector2] = []
 var _pending_spread: Array[float] = []
 var _reload_labels: Array[Label] = []
+var _mouse_fire_seen := false
+var _world_fire_pending := false
 
 
 func _ready() -> void:
@@ -95,14 +97,24 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	_update_reload(delta)
-	if _ship.action_just_pressed(&"fire"):
+	var fire: bool = _ship.action_just_pressed(&"fire") and (not _mouse_fire_seen or _world_fire_pending)
+	_mouse_fire_seen = false
+	_world_fire_pending = false
+	if fire:
 		try_fire()
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.is_action_pressed(&"fire"):
+		_mouse_fire_seen = true
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _ship.controls_locked:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
+	if event is InputEventMouseButton and event.is_action_pressed(&"fire"):
+		_world_fire_pending = true
+	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_1: select_ammo(0)
 			KEY_2: select_ammo(1)

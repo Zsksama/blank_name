@@ -9,6 +9,8 @@ enum Action { SINK, FLEE, ATTACK_PLAYER, ATTACK_FORTRESS, ADVANCE, HOLD, ENTER_G
 enum Target { NONE, PLAYER, FORTRESS }
 
 const RETREAT_SPEED_MULTIPLIER := 3.0
+const RETREAT_MORALE_THRESHOLD := 0.10
+const DAMAGED_RETREAT_SINK_TIME := 6.0
 
 
 class WeaponDeck extends Node2D:
@@ -112,7 +114,7 @@ func step(delta: float, player: ShipCombat, fortress_front: float, fortress_aliv
 	weave_strength = 0.0
 	if not combat.targetable or boarding_locked:
 		return
-	if action == Action.FLEE or battle_morale < 0.10 or morale <= retreat_threshold:
+	if action == Action.FLEE or battle_morale < RETREAT_MORALE_THRESHOLD or morale <= retreat_threshold:
 		_flee(delta)
 		return
 
@@ -233,10 +235,25 @@ func _advance_sway(amplitude: float, hz: float, delta: float) -> float:
 func _flee(delta: float) -> void:
 	action = Action.FLEE
 	combat.face(1.0)
-	horizontal_speed = _speed() * RETREAT_SPEED_MULTIPLIER
-	global_position.x += horizontal_speed * delta
 	var screen_right := maxf(lanes.sea_right, get_viewport_rect().end.x)
-	if global_position.x >= screen_right + config.size.x * 0.5:
+	var half_width := config.size.x * 0.5
+	var sail_damaged := combat.parts.condition(ShipParts.Part.SAIL) != ShipParts.Condition.NORMAL
+	horizontal_speed = _speed() * RETREAT_SPEED_MULTIPLIER
+	if sail_damaged:
+		var hull_hp := combat.parts.hp(ShipParts.Part.HULL)
+		var drain_rate := combat.parts.max_hp(ShipParts.Part.HULL) / DAMAGED_RETREAT_SINK_TIME
+		var time_to_sink := hull_hp / drain_rate
+		var damage := hull_hp if delta > 0.0 and is_equal_approx(delta, time_to_sink) else drain_rate * delta
+		combat.apply_raw_damage(ShipParts.Part.HULL, damage)
+		if not combat.targetable:
+			horizontal_speed = 0.0
+			return
+		# 接近右缘时放慢，给沉没演出留出画面空间。
+		var visible_distance := maxf(0.0, screen_right - half_width - global_position.x)
+		horizontal_speed = minf(horizontal_speed, visible_distance / time_to_sink)
+
+	global_position.x += horizontal_speed * delta
+	if not sail_damaged and global_position.x >= screen_right + half_width:
 		combat.targetable = false
 		retreated.emit(self)
 		queue_free()
@@ -260,15 +277,16 @@ func _on_blast_pushed(distance: float) -> void:
 		lanes.sea_right + config.size.x * 0.5)
 
 
-func sail_into_gate(lane: int, entrance: Vector2, inside_x: float, duration: float) -> Tween:
+func sail_into_gate(lane: int, approach: Vector2, passage: Vector2, berth: Vector2, duration: float) -> Tween:
 	action = Action.ENTER_GATE
 	combat.targetable = false
 	combat.face(-1.0)
 	z_index = lanes.content_z(maxi(lane_index, lane))
 	var sail := create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
-	sail.tween_property(self, "global_position", entrance, duration * 0.76)
+	sail.tween_property(self, "global_position", approach, duration * 0.65)
 	sail.tween_property(self, "lane_index", lane, 0.0)
-	sail.tween_property(self, "global_position:x", inside_x, duration * 0.24)
+	sail.tween_property(self, "global_position", passage, duration * 0.15)
+	sail.tween_property(self, "global_position", berth, duration * 0.20)
 	sail.tween_callback(hide)
 	return sail
 

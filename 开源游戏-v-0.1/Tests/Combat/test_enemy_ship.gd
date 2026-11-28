@@ -17,6 +17,7 @@ func _run() -> void:
 	_test_damage_and_conduction()
 	_test_swept_hits()
 	_test_retreat_and_sinking()
+	_test_damaged_sail_retreat()
 	_test_all_enemy_hulls_sink()
 	_test_nested_damage()
 	await _test_live_input()
@@ -28,6 +29,7 @@ func _run() -> void:
 func _test_template_and_overlap() -> void:
 	var battle = _make_battle()
 	var player: PlayerShip = battle.get_node("PlayerShip")
+	var fortress: Fortress = battle.get_node("Fortress")
 
 	var ships: Array[EnemyShip] = []
 	var speeds: Array[float] = []
@@ -46,12 +48,13 @@ func _test_template_and_overlap() -> void:
 	_check(ships[0].config.id == &"E-01", "The normal spawn entry loads the E-01 template")
 	_check(float(speeds.min()) == 16.0 and float(speeds.max()) == 16.0,
 		"Normal ships use the configured 16 px/s cruising speed")
+	var fire_line := fortress.target_x(1) + ENEMY.attack_range
 	for ship in ships:
-		_close(ship.position.x, 260.0, "Every enemy reaches the arrow range and stops")
+		_close(ship.position.x, fire_line, "Every enemy reaches the arrow range and stops")
 	_close(battle.fortress_hp, 400.0, "Advancing and reaching the stop line do not damage the fortress")
 	_check(not ships[0].try_change_lane(0), "E-01 disables explicit lane changes by default")
 
-	player.position.x = 260.0
+	player.position.x = fire_line
 	_check(player.try_change_lane(1) and player.lane_change_fail_reason.is_empty(),
 		"The player can enter an occupied lane")
 
@@ -75,20 +78,23 @@ func _test_targets_and_recoil() -> void:
 	var battle = _make_battle()
 	var player: PlayerShip = battle.get_node("PlayerShip")
 	var enemy: EnemyShip = battle.spawn_enemy(2)
+	var fortress: Fortress = battle.get_node("Fortress")
+	var fire_line := fortress.target_x(2) + ENEMY.attack_range
+	var encounter_x := fire_line + 80.0
 	var sprite := enemy.combat.visual_sprite()
 	_check(sprite.flip_h, "The new E-01 art is mirrored to face the fortress")
 	battle._physics_process(0.2)
 	_check(enemy.action == EnemyShip.Action.ADVANCE and _shots(battle).is_empty(),
 		"An out-of-range enemy advances without firing")
 
-	enemy.position.x = 260.0
-	player.position.x = 140.0
+	enemy.position.x = encounter_x
+	player.position.x = encounter_x - 120.0
 	var origin := enemy.combat.muzzle_position(-1.0)
 	var target := player.combat.aim_point()
 	battle._physics_process(0.1)
 	_check(enemy.action == EnemyShip.Action.ATTACK_PLAYER and _shots(battle).is_empty(),
 		"A same-lane player takes priority over the fortress and starts the target delay")
-	_close(enemy.position.x, 260.0, "Acquiring the player stops forward movement")
+	_close(enemy.position.x, encounter_x, "Acquiring the player stops forward movement")
 	battle._physics_process(0.29)
 	_check(_shots(battle).is_empty(), "An enemy cannot fire before the full target delay")
 	battle._physics_process(0.02)
@@ -106,27 +112,29 @@ func _test_targets_and_recoil() -> void:
 	_check(point_at_target.distance_to(target) < 0.01, "The launch aims at the player's current point")
 	_check(ball.global_position.distance_to(origin) < 0.01, "The arrow originates at the displayed weapons deck")
 	_check(enemy.combat.muzzle_position(-1.0).distance_to(origin) < 0.01, "Arrows leave the deck without cannon recoil")
-	_check(enemy.lane_index == 2 and enemy.position.is_equal_approx(Vector2(260.0, 489.6)),
+	_check(enemy.lane_index == 2 and enemy.position.is_equal_approx(Vector2(encounter_x, 489.6)),
 		"Shooting an arrow leaves the logical lane and occupancy anchor in place")
 
+	enemy.position.x = fire_line
 	_check(player.try_change_lane(1), "The player can leave for an open lane")
 	battle._physics_process(0.2)
-	_check(enemy.action == EnemyShip.Action.ATTACK_FORTRESS and enemy.position.x == 260.0,
+	_check(enemy.action == EnemyShip.Action.ATTACK_FORTRESS and enemy.position.x == fire_line,
 		"A player leaving the lane immediately switches to the fortress within range")
 	_check(_shots(battle).size() == 1, "Switching targets preserves the existing reload")
 	battle._physics_process(2.7)
 	_check(_shots(battle).size() == 1, "A new target cannot bypass the full reload")
 	battle._physics_process(0.12)
 	_check(_shots(battle).size() == 2, "The enemy fires at the fortress when both timers clear")
-	_close(enemy.position.x, 260.0, "The attacker holds the new firing line")
+	_close(enemy.position.x, fire_line, "The attacker holds the new firing line")
 	battle.free()
 
 	battle = _make_battle()
 	player = battle.get_node("PlayerShip")
 	enemy = battle.spawn_enemy(2)
-	enemy.position.x = 260.0
-	player.position.x = 140.0
+	enemy.position.x = encounter_x
+	player.position.x = encounter_x - 120.0
 	battle._physics_process(0.1)
+	enemy.position.x = fire_line
 	_check(player.try_change_lane(1), "A reachable player can leave before the first shot")
 	battle._physics_process(0.28)
 	battle._physics_process(0.29)
@@ -310,6 +318,50 @@ func _test_retreat_and_sinking() -> void:
 	battle.free()
 
 
+func _test_damaged_sail_retreat() -> void:
+	var battle = _make_battle()
+	var hull := ShipParts.Part.HULL
+	var sail := ShipParts.Part.SAIL
+	var crippled: EnemyShip = battle.spawn_enemy(0, ENEMY, 800.0)
+	var fast := EnemySpawner.TYPES[EnemyShipConfig.Type.FAST] as EnemyShipConfig
+	var right := maxf(crippled.lanes.sea_right, root.get_visible_rect().end.x)
+	var near_edge: EnemyShip = battle.spawn_enemy(1, fast, right - 1.0)
+	var intact: EnemyShip = battle.spawn_enemy(3, fast, right - 64.0)
+	var cap := crippled.combat.parts.max_hp(hull)
+	var fast_cap := near_edge.combat.parts.max_hp(hull)
+	crippled.combat.parts.set_hp(sail, crippled.combat.parts.max_hp(sail) * 0.75)
+	near_edge.combat.parts.set_hp(hull, fast_cap * 0.5)
+	near_edge.combat.parts.set_hp(sail, 0.0)
+	var events := {"sunk": [], "escaped": []}
+	battle.enemy_sunk.connect(func(ship: EnemyShip): events.sunk.append(ship))
+	battle.enemy_retreated.connect(func(ship: EnemyShip): events.escaped.append(ship))
+
+	battle._physics_process(1.0)
+	_close(crippled.combat.parts.hp(hull), cap, "Sail damage does not drain the hull before retreat")
+	var turn_x := crippled.position.x
+	battle.morale_bias = -0.91
+	for tick in range(60):
+		battle._physics_process(1.0 / 60.0)
+	_close(crippled.combat.parts.hp(hull), cap * 5.0 / 6.0, "A torn sail drains a sixth of the hull cap per second")
+	_close(near_edge.combat.parts.hp(hull), fast_cap / 3.0, "A destroyed sail drains even beside the exit")
+	_close(intact.combat.parts.hp(hull), fast_cap, "An intact sail does not drain the hull during retreat")
+	_check(crippled.position.x > turn_x and crippled.action == EnemyShip.Action.FLEE,
+		"The torn-sail ship continues retreating while it takes damage")
+
+	for tick in range(120):
+		battle._physics_process(1.0 / 60.0)
+	_check(events.sunk == [near_edge] and near_edge.action == EnemyShip.Action.SINK and near_edge.position.x <= right,
+		"The half-health ship with a destroyed sail sinks beside the exit in three seconds")
+	_check(events.escaped == [intact] and intact.combat.parts.hp(hull) == fast_cap,
+		"The intact ship exits at full hull health and only emits retreat")
+	for tick in range(180):
+		battle._physics_process(1.0 / 60.0)
+	_check(events.sunk == [near_edge, crippled] and not crippled.combat.targetable
+		and events.escaped == [intact] and battle.kills == 2 and battle.enemies_defeated == 3,
+		"The full-health torn-sail ship sinks inside six seconds and the roster settles each ship once")
+	battle.free()
+
+
 func _test_all_enemy_hulls_sink() -> void:
 	var battle = _make_battle()
 	var sunk_ships: Array[EnemyShip] = []
@@ -395,9 +447,11 @@ func _test_fortress_and_end_flow() -> void:
 
 	player.combat.receive_hit(ShipParts.Part.HULL, ShipParts.Ammo.SOLID, 100.0)
 	_check(not player.combat.targetable and not battle.is_over, "Player sinking does not defeat the fortress")
+	var fortress: Fortress = battle.get_node("Fortress")
 	for lane in [0, 4]:
 		var y: float = battle.get_node("Lanes").lane_center_y(lane)
-		shell = battle.launch_projectile(Vector2(130.0, y), Vector2(-1000, 0), lane, ShipCombat.Team.ENEMY, 8.0)
+		var x := fortress.target_x(lane) + 70.0
+		shell = battle.launch_projectile(Vector2(x, y), Vector2(-1000, 0), lane, ShipCombat.Team.ENEMY, 8.0)
 		shell._physics_process(0.1)
 	_close(battle.fortress_hp, 0.0, "Confirmed enemy impacts in different lanes share the same fortress HP")
 	_check(battle.is_over and battle.get_node("HUD/Banner").text == "堡已破 · 乡兵击退了倭寇",

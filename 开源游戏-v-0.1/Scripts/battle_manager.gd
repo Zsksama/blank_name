@@ -34,8 +34,6 @@ const BOARDING_DIFFICULTY := {"easy": 0.9, "normal": 1.0, "hard": 1.1}
 @export_group("碉堡")
 @export var turret_lanes: Array[int] = [0, 1, 3, 4]
 @export var water_gate_lane: int = 2
-@export var turret_x: float = 37.5
-@export var turret_scale: float = 0.5
 @export var max_fortress_hp: int = 400
 @export var turret_fire_interval: float = 3.0
 @export var turret_fire_range: float = 400.0
@@ -52,6 +50,13 @@ const BOARDING_DIFFICULTY := {"easy": 0.9, "normal": 1.0, "hard": 1.1}
 @export_group("接舷")
 @export_range(0.0, 10.0, 0.1) var boarding_distance := 0.0
 
+@export_group("天气表现")
+@export var rain_enabled := true:
+	set(value):
+		rain_enabled = value
+		if is_node_ready() and spawn_level != null:
+			_refresh_weather()
+
 @export_group("结算")
 @export_enum("easy", "normal", "hard") var difficulty := "normal"
 @export var end_delay: float = 3.0
@@ -65,11 +70,11 @@ const BOARDING_DIFFICULTY := {"easy": 0.9, "normal": 1.0, "hard": 1.1}
 @onready var _crosshair: Node2D = $Crosshair
 @onready var _enemies: Node2D = $Enemies
 @onready var _projectiles: Node2D = $Projectiles
-@onready var _status: Label = $HUD/Status
+@onready var _hud: BattleHUD = $HUD
 @onready var _banner: Label = $HUD/Banner
 @onready var _alert_label: Label = $HUD/Alert
-@onready var _morale_bar: ProgressBar = $HUD/Morale/Bar
-@onready var _morale_label: Label = $HUD/Morale/Percent
+@onready var _day_sky: TextureRect = $DaySky
+@onready var _rain = $Rain
 @onready var _boarding: BoardingFight = $Boarding
 
 var kills: int = 0
@@ -100,7 +105,7 @@ var _fort_attack_announced := false
 var _fort_hit_announced := false
 var _alert_tween: Tween
 
-var _turrets: Array[Node2D] = []
+var _turrets: Array[FortCannon] = []
 var _turret_timers: Array[float] = []
 var _spawner: EnemySpawner
 var _boarding_spawn_suspended := false
@@ -115,20 +120,20 @@ func _ready() -> void:
 	_rng.randomize()
 	_weapon.config = _config
 	_weapon.shot_requested.connect(_on_player_shot)
-	_weapon.state_changed.connect(_refresh_status)
 	_player.sunk.connect(_on_player_sunk)
 	_player.lane_change_finished.connect(func(): _player_lane_settled = true)
 	water_gate_lane = _lanes.clamp_lane_index(water_gate_lane)
+	_fit_fortress()
 	_apply_battle_start()
-	_player.combat.parts.part_changed.connect(_on_player_part_changed)
+	_hud.bind(_player, _weapon)
+	get_viewport().size_changed.connect(_resize_day_sky)
+	_resize_day_sky()
 	_prepare_spawning()
 	_boarding.configure(func(): return lamp_value, func(): return enemy_morale, _battle_start.ship_level)
 	_turret_root.watchtower.track(_enemies)
 	_boarding.active_changed.connect(_on_boarding_active_changed)
 	_boarding.finished.connect(_on_boarding_finished)
 	_boarding.morale_changed.connect(_on_boarding_morale_changed)
-	_morale_bar.fill_mode = ProgressBar.FILL_BOTTOM_TO_TOP
-	_refresh_morale()
 	_banner.text = ""
 	_worst_fort_tier = fort_tier()
 	_turret_root.show_damage(_worst_fort_tier)
@@ -137,6 +142,19 @@ func _ready() -> void:
 		_start_gate_breach.call_deferred()
 	else:
 		_launch_player_from_gate()
+
+
+func _fit_fortress() -> void:
+	_turret_root.fit_to_lanes(_lanes)
+	var edge := _turret_root.art_bounds().end
+	var shore_x := _lanes.to_local(edge).x
+	if not is_equal_approx(_lanes.sea_left, shore_x):
+		_lanes.sea_left = shore_x
+		_lanes.rebuild()
+	var wall: CollisionShape2D = $Walls/WallLeft/CollisionShape2D
+	var half_width := (wall.shape as RectangleShape2D).size.x * 0.5
+	wall.global_position.x = edge.x - half_width
+	_hud.fit_fort_clearance(edge.x)
 
 
 func build_turrets() -> void:
@@ -153,10 +171,9 @@ func build_turrets() -> void:
 			break
 		if lane < 0 or lane >= counts.size() or counts[lane] >= (1 if lane == water_gate_lane else 2):
 			continue
-		var turret: Node2D = TURRET_SCENE.instantiate()
+		var turret: FortCannon = TURRET_SCENE.instantiate()
 		turret.lane_index = lane
-		turret.position = Vector2(turret_x, _lanes.lane_center_y(lane) - counts[lane] * 24.0)
-		turret.scale = Vector2.ONE * turret_scale
+		turret.position = _turret_root.cannon_mount(lane, counts[lane])
 		_turret_root.add_child(turret)
 		_turrets.append(turret)
 		_turret_timers.append(turret_fire_interval * _rng.randf_range(0.2, 1.0))
@@ -166,6 +183,7 @@ func build_turrets() -> void:
 
 func _process(_delta: float) -> void:
 	_crosshair.global_position = get_global_mouse_position()
+	_crosshair.visible = not is_over and not _boarding.active and not _hud.pointer_on_hud()
 
 
 func _physics_process(delta: float) -> void:
@@ -174,10 +192,11 @@ func _physics_process(delta: float) -> void:
 
 	_advance_morale(delta)
 	var morale := enemy_morale
+	_hud.set_enemy_morale(morale)
 	for child in _enemies.get_children():
 		var ship := child as EnemyShip
 		if ship != null:
-			ship.step(delta, _player.combat, _lanes.sea_left, fortress_hp > 0.0, morale)
+			ship.step(delta, _player.combat, _turret_root.target_x(ship.lane_index), fortress_hp > 0.0, morale)
 
 	_update_turrets(delta)
 	_check_boarding(delta)
@@ -193,11 +212,22 @@ func _prepare_spawning() -> void:
 	if spawn_level.weather == "storm":
 		wave_tint *= Color(0.82, 0.86, 0.92)
 	_lanes.sea.set_weather(spawn_level.wave_amplitude_scale(), spawn_level.wave_speed_scale(), wave_tint)
+	_refresh_weather()
 	_spawner = EnemySpawner.new()
 	_spawner.name = "EnemySpawner"
 	add_child(_spawner)
 	_spawner.batch_announced.connect(_on_spawn_batch_announced)
 	_spawner.begin(spawn_level, _battle_start.difficulty, spawn_seed, spawn_interval_range, spawn_sound_path)
+
+
+func _refresh_weather() -> void:
+	var storm := spawn_level.weather == "storm"
+	_day_sky.visible = spawn_level.time_of_day == "day" and not storm
+	_rain.configure(_lanes, storm and rain_enabled)
+
+
+func _resize_day_sky() -> void:
+	_day_sky.size = Vector2(get_viewport_rect().size.x, _lanes.sea_top)
 
 
 func _on_spawn_batch_announced(formation: EnemySpawnLevel.Formation, _arrivals: Array[EnemySpawner.Arrival]) -> void:
@@ -276,7 +306,6 @@ func _on_enemy_sunk(ship: EnemyShip) -> void:
 	var remainder := _rng.randf_range(0.4, 0.6) / maxf(1.0, enemy_total)
 	_morale_drops.append(Vector2(remainder, MORALE_DROP_TIME))
 	_refresh_status()
-	_refresh_morale()
 	enemy_sunk.emit(ship)
 	_check_for_victory()
 
@@ -286,7 +315,6 @@ func _on_enemy_retreated(ship: EnemyShip) -> void:
 		return
 	enemies_defeated += 1
 	_refresh_status()
-	_refresh_morale()
 	enemy_retreated.emit(ship)
 	_check_for_victory()
 
@@ -352,13 +380,25 @@ func _show_alert(message: String) -> void:
 
 
 func _gate_entrance() -> Vector2:
-	return _lanes.to_global(Vector2(_lanes.sea_left, _lanes.lane_bottom_y(water_gate_lane)))
+	return _turret_root.gate_entrance()
+
+
+func _gate_berth(ship_width: float) -> Vector2:
+	return _gate_entrance() - Vector2(ship_width * 0.5 + 58.0, 0.0)
+
+
+func _gate_passage() -> Vector2:
+	return Vector2(_turret_root.art_bounds().end.x, _gate_entrance().y)
+
+
+func _gate_approach(ship_width: float) -> Vector2:
+	return _lanes.to_global(Vector2(_lanes.sea_left + ship_width * 0.5 + 26.0, _lanes.lane_bottom_y(water_gate_lane)))
 
 
 func _launch_player_from_gate() -> void:
-	var entrance_x := _gate_entrance().x
-	await _player.sail_from_gate(water_gate_lane, entrance_x - 48.0,
-		entrance_x + _player.combat.size.x * 0.5 + 26.0, gate_launch_time)
+	var width := _player.combat.size.x
+	await _player.sail_from_gate(water_gate_lane, _gate_berth(width), _gate_passage(),
+		_gate_approach(width), gate_launch_time)
 
 
 func _on_player_sunk(player: PlayerShip) -> void:
@@ -395,29 +435,35 @@ func _start_gate_breach() -> void:
 	if closest == null:
 		_finish(false)
 		return
-	var sail := closest.sail_into_gate(water_gate_lane, entrance, entrance.x - 62.0, gate_breach_time)
+	var width := closest.combat.size.x
+	var sail := closest.sail_into_gate(water_gate_lane, _gate_approach(width), _gate_passage(),
+		_gate_berth(width), gate_breach_time)
 	sail.finished.connect(_finish.bind(false))
 	await get_tree().create_timer(gate_breach_time + 0.25, false, true).timeout
 	_finish(false)
 
 
 func _update_turrets(delta: float) -> void:
+	var defense_limit := _lanes.sea_left + turret_fire_range
+	var bastion_edge := _turret_root.art_bounds().end.x
 	for index in range(_turrets.size()):
 		_turret_timers[index] = maxf(0.0, _turret_timers[index] - delta)
 		if _turret_timers[index] > 0.0:
 			continue
-		var turret: Node2D = _turrets[index]
+		var turret := _turrets[index]
 		var origin: Vector2 = turret.muzzle_position()
 		var lane: int = turret.lane_index
-		var target := _frontmost_enemy_in_lane(lane, origin.x + turret_fire_range)
+		var target := _frontmost_enemy_in_lane(lane, defense_limit)
 		if target == null:
 			continue
 		var heading := origin.direction_to(target.combat.aim_point())
 		var spread := turret_weave_spread_deg * target.weave_strength
 		if spread > 0.0:
 			heading = heading.rotated(deg_to_rad(_rng.randf_range(-spread, spread)))
-		launch_projectile(origin, heading * turret_shell_speed,
+		var shell := launch_projectile(origin, heading * turret_shell_speed,
 			lane, ShipCombat.Team.ALLY, turret_damage, ShipParts.Ammo.SOLID, 0.0)
+		if heading.x > 0.0 and origin.x < bastion_edge:
+			shell.draw_over_fortress(bastion_edge, _turret_root.z_index)
 		_turret_timers[index] = turret_fire_interval
 
 
@@ -478,11 +524,12 @@ func _on_boarding_finished(result: int) -> void:
 func _on_boarding_active_changed(active: bool) -> void:
 	_lanes.sea.set_boarding(active)
 	_turret_root.watchtower.set_frozen(active)
+	_hud.set_boarding(active)
 
 
 func _on_boarding_morale_changed(points: float) -> void:
 	morale_bias += points / 100.0
-	_refresh_morale()
+	_hud.set_enemy_morale(enemy_morale)
 
 
 func _advance_morale(delta: float) -> void:
@@ -492,21 +539,10 @@ func _advance_morale(delta: float) -> void:
 		_morale_drops[i].y -= delta
 		if _morale_drops[i].y <= 0.0:
 			_morale_drops.remove_at(i)
-	_refresh_morale()
-
-
-func _refresh_morale() -> void:
-	var percent := enemy_morale * 100.0
-	_morale_bar.value = percent
-	_morale_label.text = "%d%%" % roundi(percent)
 
 
 func _on_player_shot(origin: Vector2, velocity: Vector2, lane: int, ammo_type: ShipParts.Ammo) -> void:
 	launch_projectile(origin, velocity, lane, ShipCombat.Team.ALLY, _config.shell_damage[ammo_type], ammo_type)
-
-
-func _on_player_part_changed(_part: ShipParts.Part, _hp: float, _condition: ShipParts.Condition) -> void:
-	_refresh_status()
 
 
 func launch_projectile(
@@ -534,8 +570,8 @@ func launch_projectile(
 			if _config.explode_self_damage:
 				ball.explosion_owner = _player.combat
 	if team == ShipCombat.Team.ENEMY:
-		var height := _lanes.sea_bottom - _lanes.sea_top
-		ball.fortress_bounds = Rect2(_lanes.sea_left - 16.0, _lanes.sea_top, 16.0, height)
+		ball.fortress_bounds = _turret_root.art_bounds()
+		ball.fortress_sections = _turret_root.hit_sections
 		ball.fortress_hit.connect(_on_fortress_hit)
 	_projectiles.add_child(ball)
 	return ball
@@ -546,9 +582,10 @@ func _freeze_combat() -> void:
 	_boarding.cancel()
 	_player.lock_controls()
 	_crosshair.hide()
-	$HUD/ReloadRing.hide()
+	_hud.finish()
 	_weapon.set_process(false)
 	_weapon.set_physics_process(false)
+	_weapon.set_process_input(false)
 	_weapon.set_process_unhandled_input(false)
 	for child in _projectiles.get_children():
 		if child is Projectile:
@@ -576,7 +613,9 @@ func _finish(won: bool) -> void:
 		ending_reached.emit()
 		return
 	if won and not _player.combat.parts.is_sunk():
-		_player.sail_back_to_gate(water_gate_lane, _gate_entrance().x - 48.0, minf(end_delay, gate_launch_time))
+		var width := _player.combat.size.x
+		_player.sail_back_to_gate(water_gate_lane, _gate_approach(width), _gate_passage(),
+			_gate_berth(width), minf(end_delay, gate_launch_time))
 	refresh_after_end(won)
 
 
@@ -648,28 +687,6 @@ func _build_result(won: bool) -> Dictionary:
 
 
 func _refresh_status() -> void:
-	var ammo_names := ["实心", "破帆", "爆炸"]
-	var ammo_labels := PackedStringArray()
-	for index in range(_weapon.ammo.size()):
-		var selected := "▶" if index == _weapon.ammo_selected else " "
-		ammo_labels.append("%s%s%d" % [selected, ammo_names[index], _weapon.ammo[index]])
-
-	var parts := _player.combat.parts
-	var order := [ShipParts.Part.HULL, ShipParts.Part.SAIL, ShipParts.Part.CANNON, ShipParts.Part.RUDDER, ShipParts.Part.RAM]
-	var hp_labels := PackedStringArray()
-	for part: ShipParts.Part in order:
-		var ratio := parts.hp(part) / maxf(parts.max_hp(part), 0.001)
-		hp_labels.append("%s%d%%" % [ShipParts.PART_NAMES[part], roundi(ratio * 100.0)])
-	var fort_percent := roundi(100.0 * fortress_hp / maxf(fortress_hp_cap, 1.0))
-	var level := "·"
-	match _turrets.size():
-		4: level = "Ⅰ"
-		5: level = "Ⅱ"
-		6: level = "Ⅲ"
-	var slots := "■".repeat(_turrets.size()) + "□".repeat(MAX_TURRETS - _turrets.size())
-	var fire_mode := "单发" if _weapon.fire_mode == 0 else "齐射"
-	var date := spawn_level.display_name if spawn_level != null else ""
-	_status.text = "%s  ·  %s  ·  %s    敌船 %d/%d    击沉 %d    堡%s %d%%  %s\n%s    灯火 %d    余败场 %d" % [
-		date, "  ".join(ammo_labels), fire_mode, maxi(0, enemy_total - enemies_defeated), enemy_total,
-		kills, level, fort_percent, slots, "  ".join(hp_labels), lamp_value, defeats_left,
-	]
+	_hud.set_battle_status(spawn_level.display_name, enemies_defeated, enemy_total, kills, lamp_value,
+		_battle_start.fort_level, fortress_hp / maxf(fortress_hp_cap, 1.0))
+	_hud.set_enemy_morale(enemy_morale)

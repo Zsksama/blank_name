@@ -1,25 +1,20 @@
 [gd_scene format=3 uid="uid://ds2e56ukgiwqb"]
 
 [ext_resource type="Texture2D" uid="uid://bhpv43i0k0qut" path="res://Assets/Art/Environment/bg_sky.png" id="1_bg"]
-[ext_resource type="Texture2D" uid="uid://dpswyvpr6nfgx" path="res://Assets/Art/Environment/land.png" id="3_land"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Environment/sky_day.png" id="3_sky"]
 [ext_resource type="Script" uid="uid://v27whwbi8n78" path="res://Scripts/lanes.gd" id="5_lanes"]
 [ext_resource type="PackedScene" path="res://Scenes/player_ship.tscn" id="6_ship"]
 [ext_resource type="Script" uid="uid://chnebl3jkd1te" path="res://Scripts/battle_manager.gd" id="7_manager"]
 [ext_resource type="Script" path="res://Scripts/Combat/combat_config.gd" id="8_config"]
 [ext_resource type="Texture2D" uid="uid://c6752u1otieqv" path="res://Assets/Art/UI/crosshair.png" id="9_cross"]
-[ext_resource type="Script" uid="uid://cggt6idsp3k0g" path="res://Scripts/ui/reload_ring.gd" id="10_ring"]
+[ext_resource type="Script" path="res://Scripts/ui/battle_hud.gd" id="10_hud"]
 [ext_resource type="PackedScene" path="res://Scenes/fortress.tscn" id="11_fort"]
 [ext_resource type="Script" path="res://Scripts/Combat/boarding_fight.gd" id="12_boarding"]
 [ext_resource type="Script" path="res://Scripts/sea_surface.gd" id="13_sea"]
+[ext_resource type="Script" path="res://Scripts/Combat/battle_rain.gd" id="14_rain"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_v"]
 size = Vector2(8, 720)
-
-[sub_resource type="StyleBoxFlat" id="StyleBox_morale_background"]
-bg_color = Color(0.09, 0.1, 0.14, 0.9)
-
-[sub_resource type="StyleBoxFlat" id="StyleBox_morale_fill"]
-bg_color = Color(0.88, 0.48, 0.23, 1)
 
 [node name="Battle" type="Node2D" unique_id=611586165]
 script = ExtResource("7_manager")
@@ -29,17 +24,21 @@ z_index = -100
 position = Vector2(640, 360)
 texture = ExtResource("1_bg")
 
-[node name="Land" type="Sprite2D" parent="." unique_id=1900599469]
-z_index = 50
-position = Vector2(30, 432)
-scale = Vector2(0.23076923, 0.8)
-texture = ExtResource("3_land")
+[node name="DaySky" type="TextureRect" parent="."]
+visible = false
+z_index = -99
+mouse_filter = 2
+texture = ExtResource("3_sky")
+expand_mode = 1
+stretch_mode = 6
 
 [node name="Lanes" type="Node2D" parent="." unique_id=115387262]
 script = ExtResource("5_lanes")
+sea_left = 224.0
 
 [node name="SeaSurface" type="Node2D" parent="Lanes"]
 script = ExtResource("13_sea")
+draw_to_left_edge = true
 
 [node name="CombatConfig" type="Node" parent="." unique_id=1637146987]
 script = ExtResource("8_config")
@@ -53,7 +52,7 @@ script = ExtResource("8_config")
 [node name="Walls" type="Node2D" parent="." unique_id=519967956]
 
 [node name="WallLeft" type="StaticBody2D" parent="Walls" unique_id=1601315593]
-position = Vector2(56, 360)
+position = Vector2(220, 360)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Walls/WallLeft" unique_id=961454481]
 shape = SubResource("RectangleShape2D_wall_v")
@@ -70,86 +69,58 @@ shape = SubResource("RectangleShape2D_wall_v")
 z_index = 60
 texture = ExtResource("9_cross")
 
+[node name="Rain" type="CanvasLayer" parent="."]
+visible = false
+script = ExtResource("14_rain")
+
+[node name="Streaks" type="Node2D" parent="Rain"]
+
 [node name="HUD" type="CanvasLayer" parent="." unique_id=2039190999]
-
-[node name="Status" type="Label" parent="HUD" unique_id=894225714]
-offset_left = 96.0
-offset_top = 8.0
-offset_right = 1270.0
-offset_bottom = 78.0
-theme_override_colors/font_color = Color(0.94, 0.96, 0.99, 1)
-theme_override_font_sizes/font_size = 20
-text = "开始"
-
-[node name="Hint" type="Label" parent="HUD" unique_id=95249816]
-offset_left = 96.0
-offset_top = 688.0
-offset_right = 1270.0
-offset_bottom = 716.0
-theme_override_colors/font_color = Color(0.86, 0.9, 0.95, 0.85)
-theme_override_font_sizes/font_size = 15
-text = "鼠标瞄准 · 左键开火 · 1/2/3 换弹 · Q 切换齐射 · A/D 航行 · W/S 换道"
+layer = 2
+script = ExtResource("10_hud")
 
 [node name="Banner" type="Label" parent="HUD" unique_id=298166628]
-offset_left = 240.0
-offset_top = 290.0
-offset_right = 1040.0
-offset_bottom = 390.0
+anchor_left = 0.5
+anchor_right = 0.5
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -70.0
+offset_right = 400.0
+offset_bottom = 30.0
+mouse_filter = 2
 theme_override_colors/font_color = Color(0.93, 0.84, 0.5, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.08, 0.11, 1)
+theme_override_constants/outline_size = 7
 theme_override_font_sizes/font_size = 46
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="Alert" type="Label" parent="HUD"]
-offset_left = 240.0
-offset_top = 94.0
-offset_right = 1040.0
-offset_bottom = 132.0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -400.0
+offset_top = 134.0
+offset_right = 400.0
+offset_bottom = 170.0
+mouse_filter = 2
 theme_override_colors/font_color = Color(1, 0.76, 0.47, 1)
-theme_override_font_sizes/font_size = 24
+theme_override_colors/font_outline_color = Color(0.05, 0.08, 0.11, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
 horizontal_alignment = 1
-
-[node name="ReloadRing" type="Node2D" parent="HUD" unique_id=795453989]
-position = Vector2(52, 101)
-script = ExtResource("10_ring")
-radius = 28.0
-thickness = 8.0
 
 [node name="Morale" type="Control" parent="HUD"]
 anchor_left = 1.0
 anchor_top = 0.5
 anchor_right = 1.0
 anchor_bottom = 0.5
-offset_left = -73.0
-offset_top = -112.0
-offset_right = -13.0
-offset_bottom = 112.0
-pivot_offset = Vector2(30, 112)
+offset_left = -72.0
+offset_top = -110.0
+offset_right = -14.0
+offset_bottom = 110.0
+pivot_offset = Vector2(29, 110)
 mouse_filter = 2
-
-[node name="Percent" type="Label" parent="HUD/Morale"]
-offset_right = 60.0
-offset_bottom = 24.0
-mouse_filter = 2
-theme_override_colors/font_color = Color(1, 0.89, 0.7, 1)
-theme_override_colors/font_outline_color = Color(0.05, 0.04, 0.04, 1)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 18
-text = "100%"
-horizontal_alignment = 1
-
-[node name="Bar" type="ProgressBar" parent="HUD/Morale"]
-offset_left = 23.0
-offset_top = 28.0
-offset_right = 37.0
-offset_bottom = 224.0
-mouse_filter = 2
-tooltip_text = "敌方气焰"
-theme_override_styles/background = SubResource("StyleBox_morale_background")
-theme_override_styles/fill = SubResource("StyleBox_morale_fill")
-step = 0.0
-value = 100.0
-show_percentage = false
 
 [node name="Boarding" type="Node" parent="."]
 script = ExtResource("12_boarding")

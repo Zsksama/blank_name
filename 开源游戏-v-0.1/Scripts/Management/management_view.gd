@@ -5,20 +5,17 @@ signal battle_started(snapshot: Dictionary)
 const Compass := preload("res://Scripts/Management/management_compass.gd")
 const Rules := preload("res://Scripts/Management/management_rules.gd")
 const Session := preload("res://Scripts/Management/management_session.gd")
+const MATERIAL_ICON := preload("res://Assets/Art/UI/Management/materials.png")
+const AMMO_ICON := preload("res://Assets/Art/UI/Management/ammo.png")
+const LIGHT_ART := preload("res://Assets/Art/UI/Management/denghuo.png")
+const LIGHT_FRAME_X := {"faint": 0, "warm": 32, "bright": 64}
 
-const INK := Color("#242d2a")
 const MUTED := Color("#4e594e")
 const SEAL := Color("#a63127")
 const SCALAR_LABELS := {
 	"materials": "材料", "research": "研究点", "light": "灯火",
 	"ship_level": "船级", "fort_level": "堡级", "fort_hp": "碉堡耐久", "defeats_left": "余败场",
 }
-const STATUS_CELLS := [
-	["materials", "材料", 0.86], ["round", Rules.AMMO_NAMES.round, 0.86], ["chain", Rules.AMMO_NAMES.chain, 0.86],
-	["grape", Rules.AMMO_NAMES.grape, 0.86], ["research", "研究点", 0.91], ["light", "灯火", 1.42],
-	["day", "日历", 0.99], ["ship", "战船", 2.09], ["fort", "碉堡", 1.49],
-]
-
 var _session: Session
 var _battle_scene: PackedScene
 var _day := -1
@@ -30,13 +27,16 @@ var _status_values := {}
 var _status_titles := {}
 var _buttons: Dictionary[String, Button] = {}
 
-@onready var _status: HBoxContainer = %Status
+@onready var _supplies: HBoxContainer = %Supplies
+@onready var _defenses: HBoxContainer = %Defenses
+@onready var _light_art: TextureRect = %LightArt
+@onready var _light_value: Label = %LightValue
+@onready var _calendar_day: Label = %CalendarDay
 @onready var _event_page: Label = %EventPage
 @onready var _event_title: Label = %EventTitle
 @onready var _previous_event: Button = %PreviousEvent
 @onready var _next_event: Button = %NextEvent
 @onready var _compass: Compass = %Compass
-@onready var _compass_hint: Label = %CompassHint
 @onready var _preview_effect: RichTextLabel = %PreviewEffect
 @onready var _budget: Label = %Budget
 @onready var _story: Label = %Story
@@ -93,23 +93,47 @@ func _refresh() -> void:
 
 
 func _create_status_cells() -> void:
-	for cell in STATUS_CELLS:
-		if _status.get_child_count() > 0:
-			_status.add_child(VSeparator.new())
-		var stack := VBoxContainer.new()
-		stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		stack.size_flags_stretch_ratio = cell[2]
-		stack.alignment = BoxContainer.ALIGNMENT_CENTER
-		stack.add_theme_constant_override("separation", 2)
-		var title := _label(cell[1], &"Muted")
-		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		var value := _label("", &"Heading")
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		stack.add_child(title)
-		stack.add_child(value)
-		_status.add_child(stack)
-		_status_titles[cell[0]] = title
-		_status_values[cell[0]] = value
+	_supplies.add_child(_resource_icon(MATERIAL_ICON, Vector2(38, 34)))
+	_add_status_cell(_supplies, "materials", "材料")
+	_supplies.add_child(VSeparator.new())
+	_supplies.add_child(_resource_icon(AMMO_ICON, Vector2(31, 31)))
+	for key in Rules.AMMO_NAMES:
+		_add_status_cell(_supplies, key, Rules.AMMO_NAMES[key])
+	_supplies.add_child(VSeparator.new())
+	_add_status_cell(_supplies, "research", "研究点")
+	_add_status_cell(_defenses, "ship", "战船", 2.1)
+	_defenses.add_child(VSeparator.new())
+	_add_status_cell(_defenses, "fort", "碉堡")
+
+
+func _resource_icon(texture: Texture2D, minimum_size: Vector2) -> TextureRect:
+	var icon := TextureRect.new()
+	icon.texture = texture
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.custom_minimum_size = minimum_size
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return icon
+
+
+func _add_status_cell(parent: HBoxContainer, key: String, caption: String, ratio: float = 1.0) -> void:
+	var stack := VBoxContainer.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.size_flags_stretch_ratio = ratio
+	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_theme_constant_override("separation", 1)
+	var title := _label(caption, &"Muted")
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var value := _label("", &"Heading")
+	value.add_theme_font_size_override("font_size", 22)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	value.mouse_filter = Control.MOUSE_FILTER_PASS
+	stack.add_child(title)
+	stack.add_child(value)
+	parent.add_child(stack)
+	_status_titles[key] = title
+	_status_values[key] = value
 
 
 func _render_status(state: Dictionary) -> void:
@@ -117,10 +141,15 @@ func _render_status(state: Dictionary) -> void:
 		_status_values[key].text = str(state[key])
 	for key in Rules.AMMO_NAMES:
 		_status_values[key].text = str(state.ammo[key])
-	_status_values.light.text = "%s %d" % [Rules.light_tier(state.light).title, state.light]
-	_status_values.light.tooltip_text = "%d / 100" % state.light
-	_status_values.light.add_theme_color_override("font_color", Color("#276361"))
-	_status_values.day.text = "第 %d 日" % state.day
+	var tier := Rules.light_tier(state.light)
+	var light_frame := AtlasTexture.new()
+	light_frame.atlas = LIGHT_ART
+	light_frame.region = Rect2(LIGHT_FRAME_X[tier.id], 0, 32, 11)
+	light_frame.filter_clip = true
+	_light_art.texture = light_frame
+	_light_value.text = "灯火 · %s %d" % [tier.title, state.light]
+	_light_value.tooltip_text = "%d / 100" % state.light
+	_calendar_day.text = "第 %d 日" % state.day
 
 	var caps := Rules.ship_caps(state.ship_level)
 	var part_status := PackedStringArray()
@@ -152,7 +181,6 @@ func _render_event(state: Dictionary) -> void:
 	_story.text = Rules.EVENTS[event].story
 	_previous_event.disabled = _event_index == 0
 	_next_event.disabled = _event_index == Rules.EVENT_IDS.size() - 1
-	_compass_hint.text = "拖动罗盘选项"
 
 	for child in _choices.get_children():
 		_choices.remove_child(child)
@@ -160,9 +188,11 @@ func _render_event(state: Dictionary) -> void:
 	_buttons.clear()
 	_badges.clear()
 	var compass_options: Array[Dictionary] = []
-	for option in Rules.OPTIONS[event]:
+	var options: Array = Rules.OPTIONS[event]
+	var row_height := 46.0 if options.size() > 3 else 63.0
+	for option in options:
 		var available := Rules.option_available(event, option.id, state)
-		_add_option(option, available, option.id == recommendation)
+		_add_option(option, available, option.id == recommendation, row_height)
 		if available:
 			if option.id == recommendation:
 				compass_options.push_front(option)
@@ -171,10 +201,11 @@ func _render_event(state: Dictionary) -> void:
 	_compass.show_choices(compass_options, _session.get_draft()[event], recommendation)
 
 
-func _add_option(option: Dictionary, available: bool, recommended: bool) -> void:
+func _add_option(option: Dictionary, available: bool, recommended: bool, row_height: float) -> void:
 	var button := Button.new()
 	button.name = option.id
-	button.custom_minimum_size.y = 62.0
+	button.theme_type_variation = &"Choice"
+	button.custom_minimum_size.y = row_height
 	button.toggle_mode = true
 	button.disabled = not available
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -188,27 +219,26 @@ func _add_option(option: Dictionary, available: bool, recommended: bool) -> void
 	row.add_theme_constant_override("separation", 10)
 	button.add_child(row)
 	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	row.offset_left = 14
-	row.offset_right = -14
+	row.offset_left = 20
+	row.offset_right = -20
 
 	var badge := _label("◇", &"Heading")
-	badge.custom_minimum_size.x = 28
+	badge.custom_minimum_size.x = 30
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	row.add_child(badge)
 	_badges[option.id] = badge
 
-	var copy := VBoxContainer.new()
-	copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	copy.alignment = BoxContainer.ALIGNMENT_CENTER
-	copy.add_theme_constant_override("separation", 0)
 	var title := _label(option.title, &"Heading")
-	title.add_theme_font_size_override("font_size", 22)
-	copy.add_child(title)
+	title.custom_minimum_size.x = 104.0
+	title.add_theme_font_size_override("font_size", 21)
+	if not available:
+		title.add_theme_color_override("font_color", MUTED)
+	row.add_child(title)
 	var detail := _label(option.description, &"Muted")
+	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail.add_theme_font_size_override("font_size", 16)
 	detail.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	copy.add_child(detail)
-	row.add_child(copy)
+	row.add_child(detail)
 
 	var costs: Dictionary = option.get("costs", {})
 	var tag := ""
@@ -245,7 +275,7 @@ func _render_order(state: Dictionary) -> void:
 	var selection: String = _session.get_draft()[event]
 	_sync_choice(selection)
 	var preview := _session.preview()
-	var lines := PackedStringArray(["按现况估算，实际以战果为准"])
+	var lines := PackedStringArray()
 	if selection.is_empty():
 		lines.append("选择一项以查看变化")
 	else:
@@ -258,7 +288,7 @@ func _render_order(state: Dictionary) -> void:
 					lines.append("满耐久时免修理费")
 				break
 	_preview_effect.text = "\n".join(lines)
-	_budget.text = "整单预留  材料 %d/%d  ·  研究 %d/%d" % [
+	_budget.text = "预留  材料 %d/%d  ·  研究 %d/%d" % [
 		preview.costs.materials, state.materials, preview.costs.research, state.research,
 	]
 
@@ -327,6 +357,7 @@ func _label(content: String, variant: StringName) -> Label:
 	label.text = content
 	label.theme_type_variation = variant
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	return label
 
 

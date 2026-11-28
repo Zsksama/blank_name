@@ -1,6 +1,8 @@
 class_name PlayerShip
 extends CharacterBody2D
 
+const Oars := preload("res://Scripts/Combat/player_oars.gd")
+
 signal sunk(ship: PlayerShip)
 signal lane_change_finished
 
@@ -10,13 +12,12 @@ signal lane_change_finished
 @export var lane_switch_time: float = 0.6
 
 @export_group("船体")
-@export_range(0.1, 1.0, 0.01) var ship_scale: float = 0.25
+@export_range(0.1, 2.0, 0.01) var ship_scale: float = 0.25
 @export var art_keel_y: float = 90.0
 @export var waterline_submerge: float = 1.0
 @export var damage_profile: ShipDamageProfile
-@export var sail_cutout := Rect2(96, 37, 151, 48)
-@export var sail_torn_texture: Texture2D
-@export var sail_ruined_texture: Texture2D
+@export var torn_ship_texture: Texture2D
+@export var ruined_ship_texture: Texture2D
 @export var hull_burn_texture: Texture2D
 
 @export_group("自动维修")
@@ -47,18 +48,23 @@ var _recoil := 0.0
 var _recoil_start := 0.0
 var _recoil_elapsed := 0.0
 var _gate_tween: Tween
+var _gate_rowing_direction := 1.0
 var _sink_tween: Tween
 var _boarding_release_frame := -2
+var _intact_ship_texture: Texture2D
 
 @onready var combat: ShipCombat = $Combat
 @onready var _weapon: PlayerWeapon = $Combat/Weapon
+@onready var _oars: Oars = $Combat/Visual/Sprite2D/Oars
 
 
 func _ready() -> void:
 	var sprite := combat.visual_sprite()
-	var ship_size := sprite.texture.get_size() * ship_scale
+	_intact_ship_texture = sprite.texture
+	var ship_size := _intact_ship_texture.get_size() * ship_scale
 	combat.configure(damage_profile, ship_size, 1.0)
-	combat.configure_damage_art(sail_torn_texture, sail_ruined_texture, hull_burn_texture, sail_cutout)
+	combat.configure_damage_art(null, null, hull_burn_texture, Rect2())
+	combat.parts.part_changed.connect(_update_sail_art)
 	combat.sunk.connect(_on_sunk)
 
 	combat.position.y = waterline_submerge - art_keel_y * ship_scale
@@ -73,6 +79,28 @@ func _ready() -> void:
 		combat.lane_index = maxi(_lanes.lane_index_at_bottom_y(global_position.y), 0)
 		_lanes.register_ship(combat)
 		_apply_lane_pose()
+
+
+func _update_sail_art(part: ShipParts.Part, _hp: float, condition: ShipParts.Condition) -> void:
+	if part != ShipParts.Part.SAIL:
+		return
+	var texture := _intact_ship_texture
+	if condition == ShipParts.Condition.DAMAGED and torn_ship_texture != null:
+		texture = torn_ship_texture
+	elif condition == ShipParts.Condition.DESTROYED and ruined_ship_texture != null:
+		texture = ruined_ship_texture
+	combat.visual_sprite().texture = texture
+
+
+func _process(delta: float) -> void:
+	var direction := 0.0
+	if _gate_tween != null and _gate_tween.is_running():
+		direction = _gate_rowing_direction
+	elif not controls_locked:
+		direction = signf(velocity.x)
+		if is_zero_approx(direction) and (is_switching() or not is_zero_approx(velocity.y)):
+			direction = 1.0
+	_oars.update_stroke(delta, direction)
 
 
 func _physics_process(delta: float) -> void:
@@ -208,7 +236,7 @@ func action_just_pressed(action: StringName) -> bool:
 		or Input.is_action_pressed(action))
 
 
-func sail_from_gate(lane: int, inside_x: float, exit_x: float, duration: float) -> void:
+func sail_from_gate(lane: int, berth: Vector2, passage: Vector2, approach: Vector2, duration: float) -> void:
 	lock_controls()
 	combat.targetable = false
 	$CollisionShape2D.set_deferred("disabled", true)
@@ -220,26 +248,34 @@ func sail_from_gate(lane: int, inside_x: float, exit_x: float, duration: float) 
 		combat.reset_sinking_pose()
 	_weapon.show()
 	_set_gate_lane(lane)
-	global_position.x = inside_x
+	global_position = berth
 	if duration > 0.0:
+		_gate_rowing_direction = 1.0
 		_gate_tween = create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
-		_gate_tween.tween_property(self, "global_position:x", exit_x, duration)
+		_gate_tween.tween_property(self, "global_position", passage, duration * 0.67)
+		_gate_tween.tween_property(self, "global_position", approach, duration * 0.33)
 		await _gate_tween.finished
 	else:
-		global_position.x = exit_x
+		global_position = approach
 	combat.targetable = true
 	controls_locked = false
 	$CollisionShape2D.set_deferred("disabled", false)
 
 
-func sail_back_to_gate(lane: int, inside_x: float, duration: float) -> void:
+func sail_back_to_gate(lane: int, approach: Vector2, passage: Vector2, berth: Vector2, duration: float) -> void:
 	combat.targetable = false
 	if duration <= 0.0:
 		return
+	# Keep the nearer lane's draw order through the crossing, just like player lane changes.
+	z_index = maxi(z_index, _lanes.content_z(lane))
+	_gate_rowing_direction = -1.0
 	_gate_tween = create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
-	_gate_tween.tween_property(self, "global_position:y", _lanes.lane_bottom_y(lane), duration * 0.35)
+	var lane_entry := Vector2(maxf(global_position.x, approach.x), approach.y)
+	_gate_tween.tween_property(self, "global_position", lane_entry, duration * 0.35)
 	_gate_tween.tween_callback(_set_gate_lane.bind(lane))
-	_gate_tween.tween_property(self, "global_position:x", inside_x, duration * 0.65)
+	_gate_tween.tween_property(self, "global_position", approach, duration * 0.28)
+	_gate_tween.tween_property(self, "global_position", passage, duration * 0.17)
+	_gate_tween.tween_property(self, "global_position", berth, duration * 0.20)
 
 
 func _set_gate_lane(lane: int) -> void:

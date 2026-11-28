@@ -17,7 +17,8 @@ func _run() -> void:
 	_test_enemy_types()
 	_test_retreat_speed()
 	_test_fast_ship_sway()
-	_test_fortress_hit_rate()
+	_test_fortress_hit_rate(340.5, 19)
+	_test_fortress_hit_rate(400.0, 18)
 	_test_opening_wave()
 	await _test_boarding_contact()
 	_test_capacity()
@@ -116,20 +117,23 @@ func _test_retreat_speed() -> void:
 func _test_fast_ship_sway() -> void:
 	var battle = _battle()
 	var player := battle.get_node("PlayerShip") as PlayerShip
-	var fast: EnemyShip = battle.spawn_enemy(0, EnemySpawner.TYPES[EnemyShipConfig.Type.FAST], 600.0)
+	var fortress := battle.get_node("Fortress") as Fortress
+	var front := fortress.target_x(0)
+	var fast: EnemyShip = battle.spawn_enemy(0, EnemySpawner.TYPES[EnemyShipConfig.Type.FAST], front + 540.0)
 	fast._sway_phase = 0.0
-	var distant := _measure_sway(fast, player, 180)
-	_check(distant.fastest_right == 0.0 and distant.strongest_weave == 0.0 and is_equal_approx(fast.position.x, 534.0),
+	var distant := _measure_sway(fast, player, front, 180)
+	_check(distant.fastest_right == 0.0 and distant.strongest_weave == 0.0 and is_equal_approx(fast.position.x, front + 474.0),
 		"The fast ship moves straight at cruise speed before reaching the fortress")
-	fast.position.x = 440.0
+	fast.position.x = front + 380.0
 	fast._sway_phase = 0.0
-	var running := _measure_sway(fast, player, 450)
-	var advanced := fast.position.x < 375.0
-	fast.position.x = 260.0
-	var stationary := _measure_sway(fast, player, 450)
+	var running := _measure_sway(fast, player, front, 450)
+	var advanced := fast.position.x < front + 315.0
+	var firing_line := front + fast.config.attack_range
+	fast.position.x = firing_line
+	var stationary := _measure_sway(fast, player, front, 450)
 	_check(advanced and running.fastest_right > 10.0 and running.fastest_left < -15.0,
 		"Near the fortress the fast ship reverses horizontally while making progress")
-	_check(stationary.span > 15.0 and stationary.span < 20.0 and stationary.farthest_x <= 260.01
+	_check(stationary.span > 15.0 and stationary.span < 20.0 and stationary.farthest_x <= firing_line + 0.01
 		and fast.action == EnemyShip.Action.ATTACK_FORTRESS, "The fast ship sways in a narrower band within firing range")
 	_check(maxf(running.water_gap, stationary.water_gap) < 0.01,
 		"A weaving fast ship keeps its keel on the lane waterline")
@@ -137,7 +141,7 @@ func _test_fast_ship_sway() -> void:
 	battle.free()
 
 
-func _measure_sway(ship: EnemyShip, player: PlayerShip, frames: int) -> Dictionary:
+func _measure_sway(ship: EnemyShip, player: PlayerShip, fortress_front: float, frames: int) -> Dictionary:
 	var high := -INF
 	var low := INF
 	var fastest_left := 0.0
@@ -147,7 +151,7 @@ func _measure_sway(ship: EnemyShip, player: PlayerShip, frames: int) -> Dictiona
 	var water_y := ship.lanes.lane_bottom_y(ship.lane_index)
 	for frame in range(frames):
 		var last := ship.position
-		ship.step(1.0 / 60.0, player.combat, 60.0, true)
+		ship.step(1.0 / 60.0, player.combat, fortress_front, true)
 		var x := ship.position.x
 		if frame > 100:
 			high = maxf(high, x)
@@ -161,18 +165,22 @@ func _measure_sway(ship: EnemyShip, player: PlayerShip, frames: int) -> Dictiona
 		"peak_speed": maxf(-fastest_left, fastest_right), "water_gap": water_gap, "strongest_weave": strongest_weave}
 
 
-func _test_fortress_hit_rate() -> void:
+func _test_fortress_hit_rate(distance: float, fast_hit_limit: int) -> void:
 	var battle = _battle()
 	battle._rng.seed = SEED
 	var player := battle.get_node("PlayerShip") as PlayerShip
 	var projectiles := battle.get_node("Projectiles") as Node2D
+	var fortress := battle.get_node("Fortress") as Fortress
+	var muzzle: Vector2 = battle._turrets[0].muzzle_position()
+	var sample_x := muzzle.x + distance
+	var front := fortress.target_x(0)
 	var hits := [0, 0]
 	for type in [EnemyShipConfig.Type.FAST, EnemyShipConfig.Type.NORMAL]:
 		var config := EnemySpawner.TYPES[type]
 		for i in range(24):
-			var ship: EnemyShip = battle.spawn_enemy(0, config, 418.0)
+			var ship: EnemyShip = battle.spawn_enemy(0, config, sample_x)
 			ship._sway_phase = TAU * i / 24.0
-			ship.step(1.0 / 60.0, player.combat, 60.0, true)
+			ship.step(1.0 / 60.0, player.combat, front, true)
 			battle._turret_timers[0] = 0.0
 			battle._update_turrets(0.0)
 			if projectiles.get_child_count() == 0:
@@ -180,7 +188,7 @@ func _test_fortress_hit_rate() -> void:
 				continue
 			var shell := projectiles.get_child(0) as Projectile
 			for frame in range(170):
-				ship.step(1.0 / 60.0, player.combat, 60.0, true)
+				ship.step(1.0 / 60.0, player.combat, front, true)
 				shell._physics_process(1.0 / 60.0)
 				if shell.is_queued_for_deletion():
 					break
@@ -190,8 +198,10 @@ func _test_fortress_hit_rate() -> void:
 			ship.free()
 			for smoke in projectiles.get_children():
 				smoke.free()
-	print("Fortress hull hits at 418 px, over 24 phases each: fast %d, normal %d" % hits)
-	_check(hits[1] == 24 and hits[0] <= 18, "Fast ships evade substantially more real fortress shots")
+	var format := "Fortress hull hits %.1f px from the muzzle, over 24 phases each: fast %d, normal %d"
+	print(format % [distance, hits[0], hits[1]])
+	_check(hits[1] == 24 and hits[0] <= fast_hit_limit,
+		"Fast ships evade more real fortress shots at %.1f px" % distance)
 	battle.free()
 
 

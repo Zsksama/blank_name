@@ -24,11 +24,54 @@ func _run() -> void:
 	_check(tower != null, "M11 is installed under the fortress")
 	if sea != null:
 		await _test_water(battle, sea)
+		await _test_player_rig(battle, sea)
 	if tower != null:
 		await _test_watchtower(battle, tower)
 	battle.free()
 	print("Battle presentation checks: %d/%d passed" % [_checks - _failed, _checks])
 	quit(0 if _failed == 0 else 1)
+
+
+func _test_player_rig(battle: Node, sea: SeaSurface) -> void:
+	var player := battle.get_node("PlayerShip") as PlayerShip
+	var art := player.combat.visual_sprite()
+	var hull := ShipParts.Part.HULL
+	var sail := ShipParts.Part.SAIL
+	var full_hp := player.combat.parts.max_hp(sail)
+	var intact := art.texture
+	var bounds := player.combat.hitbox(hull)
+	player.combat.parts.set_hp(sail, full_hp * 0.4)
+	var torn := art.texture
+	player.combat.parts.set_hp(sail, 0.0)
+	var ruined := art.texture
+	sea._process(0.0)
+	var mirror: Sprite2D = sea._sources[art.get_instance_id()].mirror
+	_check(intact != torn and torn != ruined and mirror != null and mirror.texture == ruined,
+		"Torn and destroyed sails change the hull sprite and its reflection together")
+	player.combat.parts.set_hp(sail, full_hp)
+	_check(art.texture == intact and player.combat.hitbox(hull) == bounds,
+		"Repair restores the sail without moving the hull hitbox")
+
+	var oars := art.get_node_or_null("Oars")
+	_check(oars != null and oars.get_child_count() == 7, "The player ship carries seven visible rowing oars")
+	if oars == null or oars.get_child_count() < 2:
+		return
+	var first := oars.get_child(0) as Sprite2D
+	var last := oars.get_child(-1) as Sprite2D
+	var rest := first.transform
+	Input.action_press(&"move_right")
+	await create_timer(0.28, false).timeout
+	Input.action_release(&"move_right")
+	_check(first.transform != rest and not is_equal_approx(first.rotation, last.rotation),
+		"Moving the ship sweeps the oars with a slight phase offset")
+	await create_timer(0.23, false).timeout
+	_check(first.transform.is_equal_approx(rest), "The oars ease back to rest after the ship stops")
+	_check(player.try_change_lane(player.lane_index - 1), "The player can row across lanes")
+	await create_timer(0.18, false).timeout
+	_check(first.transform != rest and player.is_switching(), "Oars keep rowing during lateral passage between lanes")
+	await player.lane_change_finished
+	await create_timer(0.23, false).timeout
+	_check(first.transform.is_equal_approx(rest), "The oars settle after a completed lane change")
 
 
 func _test_water(battle: Node, sea: Node) -> void:
@@ -136,6 +179,8 @@ func _test_lane_change_reflection(player: PlayerShip, lanes: Lanes, sea: SeaSurf
 func _test_wave_detail(sea: SeaSurface, lanes: Lanes) -> void:
 	var horizon := sea.get_node("WaterLayers/WaterBand0") as Polygon2D
 	var near_water := sea.get_node("WaterLayers/WaterBand4") as Polygon2D
+	_check(is_zero_approx(horizon.polygon[0].x) and is_equal_approx(lanes.sea_left, 224.0),
+		"Water fills the silhouette and the navigable lanes start clear of the fortress")
 	var material := horizon.material as ShaderMaterial
 	_check(material != null and near_water.material == material,
 		"The same water material carries ripples from the horizon to the near lanes")
@@ -232,6 +277,10 @@ func _test_watchtower(battle: Node, tower: Node) -> void:
 		"Finishing boarding immediately marks the remaining ship's weapons")
 	heavy.position.x = 320.0
 	var unmarked: EnemyShip = battle.spawn_enemy(1, HEAVY, 320.0)
+	# 用同样的入射角比较标记效果，避免分别命中火器和舰体。
+	var marked_ray: Vector2 = heavy.combat.aim_point() - battle._turrets[0].muzzle_position()
+	var unmarked_ray: Vector2 = unmarked.combat.aim_point() - battle._turrets[1].muzzle_position()
+	unmarked.position.x += marked_ray.x * unmarked_ray.y / marked_ray.y - unmarked_ray.x
 	var heavy_hp := heavy.combat.parts.hp(hull)
 	var unmarked_hp := unmarked.combat.parts.hp(hull)
 	battle._turret_timers.fill(0.0)

@@ -1,28 +1,44 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" uid="uid://cd1o8hgofucwi" path="res://Scripts/player_ship.gd" id="1_ship"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Characters/ship_player.png" id="2_art"]
+[ext_resource type="Texture2D" path="res://Assets/Art/Characters/player_ship_sails.png" id="2_art"]
 [ext_resource type="Script" path="res://Scripts/Combat/ship_combat.gd" id="3_combat"]
 [ext_resource type="Script" path="res://Scripts/Combat/ship_damage_profile.gd" id="4_profile"]
 [ext_resource type="Script" path="res://Scripts/player_weapon.gd" id="5_weapon"]
 [ext_resource type="Texture2D" path="res://Assets/Art/Characters/turret_ship.png" id="6_turret"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Effects/sail_torn_large.png" id="7_torn"]
-[ext_resource type="Texture2D" path="res://Assets/Art/Effects/sail_ruined_large.png" id="8_ruined"]
+[ext_resource type="Script" path="res://Scripts/Combat/player_oars.gd" id="7_oars"]
 [ext_resource type="Texture2D" path="res://Assets/Art/Effects/hull_burn_large.png" id="9_burn"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_intact"]
+atlas = ExtResource("2_art")
+region = Rect2(0, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_torn"]
+atlas = ExtResource("2_art")
+region = Rect2(64, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ruined"]
+atlas = ExtResource("2_art")
+region = Rect2(128, 0, 64, 64)
+filter_clip = true
 
 [sub_resource type="Resource" id="Resource_player_parts"]
 script = ExtResource("4_profile")
 max_hp = PackedFloat64Array(60, 100, 60, 40, 40)
-sail_box = Rect2(-0.220588, -0.365979, 0.558824, 0.28866)
-hull_box = Rect2(-0.441176, 0.175258, 0.882353, 0.28866)
-cannon_box = Rect2(0.10621, -0.092784, 0.323529, 0.206186)
+sail_box = Rect2(-0.453125, -0.359375, 0.390625, 0.484375)
+hull_box = Rect2(-0.4375, 0.21875, 0.875, 0.171875)
+cannon_box = Rect2(0.09375, 0.046875, 0.296875, 0.15625)
 
 [node name="PlayerShip" type="CharacterBody2D" unique_id=1814595808]
 position = Vector2(420, 489.6)
 script = ExtResource("1_ship")
+ship_scale = 1.2
+art_keel_y = 25.0
 damage_profile = SubResource("Resource_player_parts")
-sail_torn_texture = ExtResource("7_torn")
-sail_ruined_texture = ExtResource("8_ruined")
+torn_ship_texture = SubResource("AtlasTexture_torn")
+ruined_ship_texture = SubResource("AtlasTexture_ruined")
 hull_burn_texture = ExtResource("9_burn")
 
 [node name="Combat" type="Node2D" parent="."]
@@ -31,7 +47,11 @@ script = ExtResource("3_combat")
 [node name="Visual" type="Node2D" parent="Combat"]
 
 [node name="Sprite2D" type="Sprite2D" parent="Combat/Visual"]
-texture = ExtResource("2_art")
+texture_filter = 1
+texture = SubResource("AtlasTexture_intact")
+
+[node name="Oars" type="Node2D" parent="Combat/Visual/Sprite2D"]
+script = ExtResource("7_oars")
 
 [node name="Weapon" type="Node2D" parent="Combat"]
 script = ExtResource("5_weapon")

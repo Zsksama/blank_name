@@ -5,8 +5,10 @@
 [ext_resource type="Script" path="res://Scripts/Management/management_compass.gd" id="3_compass"]
 [ext_resource type="Texture2D" path="res://Assets/Art/UI/management_harbor.png" id="4_harbor"]
 [ext_resource type="Script" path="res://Scripts/Management/management_gong.gd" id="5_gong"]
+[ext_resource type="Texture2D" path="res://Assets/Art/UI/Management/rili.png" id="6_calendar"]
 
 [node name="Management" type="Control" unique_id=93119527]
+texture_filter = 1
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -24,144 +26,230 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.236, 0.249, 0.208, 1)
+color = Color(0.965, 0.938, 0.86, 1)
 
-[node name="Margin" type="MarginContainer" parent="."]
+[node name="Sheet" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -7.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="StatusPanel" type="PanelContainer" parent="Sheet"]
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+theme_type_variation = &"StatusFrame"
+
+[node name="Status" type="HBoxContainer" parent="Sheet/StatusPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Supplies" type="HBoxContainer" parent="Sheet/StatusPanel/Status"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Light" type="Control" parent="Sheet/StatusPanel/Status"]
+custom_minimum_size = Vector2(268, 0)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="LightArt" type="TextureRect" parent="Sheet/StatusPanel/Status/Light"]
+unique_name_in_owner = true
+z_index = 1
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -128.0
+offset_top = -10.0
+offset_right = 128.0
+offset_bottom = 78.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+
+[node name="LightValue" type="Label" parent="Sheet/StatusPanel/Status/Light"]
+unique_name_in_owner = true
+z_index = 1
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+mouse_filter = 1
+theme_type_variation = &"Heading"
+theme_override_colors/font_color = Color(1, 0.97, 0.8, 1)
+theme_override_colors/font_outline_color = Color(0.26, 0.08, 0.02, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 25
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="Sheet" type="VBoxContainer" parent="Margin"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="StatusPanel" type="PanelContainer" parent="Margin/Sheet"]
-custom_minimum_size = Vector2(0, 78)
-layout_mode = 2
-
-[node name="Status" type="HBoxContainer" parent="Margin/Sheet/StatusPanel"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 7
-
-[node name="Columns" type="HBoxContainer" parent="Margin/Sheet"]
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 10
-
-[node name="Navigation" type="PanelContainer" parent="Margin/Sheet/Columns"]
-custom_minimum_size = Vector2(253, 0)
-layout_mode = 2
-
-[node name="NavigationColumn" type="VBoxContainer" parent="Margin/Sheet/Columns/Navigation"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="EventPager" type="HBoxContainer" parent="Margin/Sheet/Columns/Navigation/NavigationColumn"]
-layout_mode = 2
-
-[node name="PreviousEvent" type="Button" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/EventPager"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(40, 38)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 22
-text = "‹"
-tooltip_text = "上一个事件"
-
-[node name="EventPage" type="Label" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/EventPager"]
+[node name="Defenses" type="HBoxContainer" parent="Sheet/StatusPanel/Status"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-horizontal_alignment = 1
+theme_override_constants/separation = 10
 
-[node name="NextEvent" type="Button" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/EventPager"]
+[node name="Columns" type="HBoxContainer" parent="Sheet"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="LeftColumn" type="VBoxContainer" parent="Sheet/Columns"]
+custom_minimum_size = Vector2(263, 0)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Navigation" type="PanelContainer" parent="Sheet/Columns/LeftColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_type_variation = &"NavigationFrame"
+
+[node name="NavigationColumn" type="VBoxContainer" parent="Sheet/Columns/LeftColumn/Navigation"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="EventPager" type="HBoxContainer" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn"]
+layout_mode = 2
+
+[node name="PreviousEvent" type="Button" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/EventPager"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(40, 38)
+custom_minimum_size = Vector2(37, 34)
 layout_mode = 2
 mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 22
-text = "›"
-tooltip_text = "下一个事件"
+theme_override_font_sizes/font_size = 23
+text = "‹"
+tooltip_text = "上一个事件"
 
-[node name="NavigationRule" type="HSeparator" parent="Margin/Sheet/Columns/Navigation/NavigationColumn"]
-layout_mode = 2
-
-[node name="EventTitle" type="Label" parent="Margin/Sheet/Columns/Navigation/NavigationColumn"]
+[node name="EventPage" type="Label" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/EventPager"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_type_variation = &"Heading"
-theme_override_font_sizes/font_size = 30
-horizontal_alignment = 1
-
-[node name="CompassHint" type="Label" parent="Margin/Sheet/Columns/Navigation/NavigationColumn"]
-unique_name_in_owner = true
-layout_mode = 2
+size_flags_horizontal = 3
 theme_type_variation = &"Muted"
 horizontal_alignment = 1
 
-[node name="Compass" type="Control" parent="Margin/Sheet/Columns/Navigation/NavigationColumn"]
+[node name="NextEvent" type="Button" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/EventPager"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 210)
+custom_minimum_size = Vector2(37, 34)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 23
+text = "›"
+tooltip_text = "下一个事件"
+
+[node name="Compass" type="Control" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 166)
 layout_mode = 2
 mouse_default_cursor_shape = 6
 script = ExtResource("3_compass")
 
-[node name="PreviewPanel" type="PanelContainer" parent="Margin/Sheet/Columns/Navigation/NavigationColumn"]
+[node name="CompassHint" type="Label" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn"]
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "拖动罗盘选项"
+horizontal_alignment = 1
+
+[node name="PreviewPanel" type="PanelContainer" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_type_variation = &"Preview"
 
-[node name="PreviewColumn" type="VBoxContainer" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/PreviewPanel"]
+[node name="PreviewColumn" type="VBoxContainer" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/PreviewPanel"]
 layout_mode = 2
-theme_override_constants/separation = 7
+theme_override_constants/separation = 4
 
-[node name="PreviewTitle" type="Label" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
+[node name="PreviewTitle" type="Label" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
 layout_mode = 2
+mouse_filter = 1
 theme_type_variation = &"Heading"
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 20
 text = "物资预览"
+tooltip_text = "按现况估算，实际以战果为准"
 
-[node name="PreviewEffect" type="RichTextLabel" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
+[node name="PreviewEffect" type="RichTextLabel" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_vertical = 3
-mouse_filter = 2
+mouse_filter = 1
 bbcode_enabled = true
-fit_content = true
-scroll_active = false
 
-[node name="PreviewRule" type="HSeparator" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
+[node name="PreviewRule" type="HSeparator" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
 layout_mode = 2
 
-[node name="Budget" type="Label" parent="Margin/Sheet/Columns/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
+[node name="Budget" type="Label" parent="Sheet/Columns/LeftColumn/Navigation/NavigationColumn/PreviewPanel/PreviewColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Muted"
 autowrap_mode = 2
 
-[node name="Events" type="VBoxContainer" parent="Margin/Sheet/Columns"]
+[node name="CalendarPanel" type="PanelContainer" parent="Sheet/Columns/LeftColumn"]
+custom_minimum_size = Vector2(0, 183)
+layout_mode = 2
+theme_type_variation = &"FooterFrame"
+
+[node name="Center" type="CenterContainer" parent="Sheet/Columns/LeftColumn/CalendarPanel"]
+layout_mode = 2
+
+[node name="Calendar" type="TextureRect" parent="Sheet/Columns/LeftColumn/CalendarPanel/Center"]
+custom_minimum_size = Vector2(128, 128)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("6_calendar")
+expand_mode = 1
+stretch_mode = 5
+flip_h = true
+
+[node name="CalendarDay" type="Label" parent="Sheet/Columns/LeftColumn/CalendarPanel/Center/Calendar"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 25.0
+offset_top = 31.0
+offset_right = -13.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"Heading"
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Events" type="VBoxContainer" parent="Sheet/Columns"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="StoryPanel" type="PanelContainer" parent="Margin/Sheet/Columns/Events"]
+[node name="StoryPanel" type="PanelContainer" parent="Sheet/Columns/Events"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_type_variation = &"Story"
 
-[node name="StoryColumn" type="VBoxContainer" parent="Margin/Sheet/Columns/Events/StoryPanel"]
+[node name="StoryColumn" type="VBoxContainer" parent="Sheet/Columns/Events/StoryPanel"]
 layout_mode = 2
-theme_override_constants/separation = 0
+theme_override_constants/separation = 8
 
-[node name="Harbor" type="TextureRect" parent="Margin/Sheet/Columns/Events/StoryPanel/StoryColumn"]
+[node name="EventTitle" type="Label" parent="Sheet/Columns/Events/StoryPanel/StoryColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+theme_type_variation = &"Heading"
+theme_override_font_sizes/font_size = 29
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Harbor" type="TextureRect" parent="Sheet/Columns/Events/StoryPanel/StoryColumn"]
+texture_filter = 2
 custom_minimum_size = Vector2(0, 148)
 layout_mode = 2
 size_flags_vertical = 3
@@ -170,63 +258,57 @@ texture = ExtResource("4_harbor")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="CaptionMargin" type="MarginContainer" parent="Margin/Sheet/Columns/Events/StoryPanel/StoryColumn"]
-layout_mode = 2
-theme_override_constants/margin_left = 13
-theme_override_constants/margin_top = 7
-theme_override_constants/margin_right = 13
-theme_override_constants/margin_bottom = 7
-
-[node name="Story" type="Label" parent="Margin/Sheet/Columns/Events/StoryPanel/StoryColumn/CaptionMargin"]
+[node name="Story" type="Label" parent="Sheet/Columns/Events/StoryPanel/StoryColumn"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
+horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="Choices" type="VBoxContainer" parent="Margin/Sheet/Columns/Events"]
+[node name="Choices" type="VBoxContainer" parent="Sheet/Columns/Events"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(380, 0)
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 7
 
-[node name="Records" type="VBoxContainer" parent="Margin/Sheet/Columns"]
-custom_minimum_size = Vector2(291, 0)
+[node name="Records" type="VBoxContainer" parent="Sheet/Columns"]
+custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 
-[node name="LedgerPanel" type="PanelContainer" parent="Margin/Sheet/Columns/Records"]
+[node name="LedgerPanel" type="PanelContainer" parent="Sheet/Columns/Records"]
 layout_mode = 2
 size_flags_vertical = 3
+theme_type_variation = &"LedgerFrame"
 
-[node name="LedgerColumn" type="VBoxContainer" parent="Margin/Sheet/Columns/Records/LedgerPanel"]
+[node name="LedgerColumn" type="VBoxContainer" parent="Sheet/Columns/Records/LedgerPanel"]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 7
 
-[node name="LedgerTitle" type="Label" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
+[node name="LedgerTitle" type="Label" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
 layout_mode = 2
 theme_type_variation = &"Heading"
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 27
 text = "记账本"
 horizontal_alignment = 1
 
-[node name="LedgerDate" type="Label" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
+[node name="LedgerDate" type="Label" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Muted"
 horizontal_alignment = 1
 
-[node name="LedgerRule" type="HSeparator" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
+[node name="LedgerRule" type="HSeparator" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
 layout_mode = 2
 
-[node name="LedgerScroll" type="ScrollContainer" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
+[node name="LedgerScroll" type="ScrollContainer" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="LedgerBody" type="RichTextLabel" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerScroll"]
+[node name="LedgerBody" type="RichTextLabel" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -235,63 +317,69 @@ bbcode_enabled = true
 fit_content = true
 scroll_active = false
 
-[node name="LedgerPager" type="HBoxContainer" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
+[node name="LedgerPager" type="HBoxContainer" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn"]
 layout_mode = 2
 
-[node name="PreviousEntry" type="Button" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerPager"]
+[node name="PreviousEntry" type="Button" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerPager"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(40, 32)
+custom_minimum_size = Vector2(37, 32)
 layout_mode = 2
 mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 22
 text = "‹"
 tooltip_text = "较早一页"
 
-[node name="LedgerPage" type="Label" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerPager"]
+[node name="LedgerPage" type="Label" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerPager"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_type_variation = &"Muted"
 horizontal_alignment = 1
 
-[node name="NextEntry" type="Button" parent="Margin/Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerPager"]
+[node name="NextEntry" type="Button" parent="Sheet/Columns/Records/LedgerPanel/LedgerColumn/LedgerPager"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(40, 32)
+custom_minimum_size = Vector2(37, 32)
 layout_mode = 2
 mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 22
 text = "›"
 tooltip_text = "较新一页"
 
-[node name="DeparturePanel" type="PanelContainer" parent="Margin/Sheet/Columns/Records"]
+[node name="DeparturePanel" type="PanelContainer" parent="Sheet/Columns/Records"]
+custom_minimum_size = Vector2(0, 183)
 layout_mode = 2
+theme_type_variation = &"FooterFrame"
 
-[node name="DepartureColumn" type="VBoxContainer" parent="Margin/Sheet/Columns/Records/DeparturePanel"]
+[node name="DepartureColumn" type="VBoxContainer" parent="Sheet/Columns/Records/DeparturePanel"]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 3
 
-[node name="Gong" type="Control" parent="Margin/Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
-custom_minimum_size = Vector2(0, 75)
+[node name="Gong" type="Control" parent="Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+size_flags_vertical = 3
 mouse_filter = 2
 script = ExtResource("5_gong")
 
-[node name="DepartureHint" type="Label" parent="Margin/Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
-layout_mode = 2
-theme_type_variation = &"Muted"
-text = "本轮订单将在下次休整结算"
-horizontal_alignment = 1
-
-[node name="DepartureStatus" type="Label" parent="Margin/Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
+[node name="DepartureStatus" type="Label" parent="Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 37)
+custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="StartBattle" type="Button" parent="Margin/Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
+[node name="StartBattle" type="Button" parent="Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 57)
+custom_minimum_size = Vector2(0, 45)
 layout_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"Seal"
 text = "鸣金"
+
+[node name="DepartureHint" type="Label" parent="Sheet/Columns/Records/DeparturePanel/DepartureColumn"]
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "本轮订单将在下次休整结算"
+horizontal_alignment = 1

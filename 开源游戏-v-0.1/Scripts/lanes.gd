@@ -102,7 +102,13 @@ func register_ship(ship: ShipCombat) -> void:
 	_ships.append(ship)
 	ship.tree_exiting.connect(func(): _ships.erase(ship), CONNECT_ONE_SHOT)
 	sea.register_ship(ship)
-	ship.struck.connect(func(part: ShipParts.Part, point: Vector2): sea.ship_hit(ship.lane_index, point, part))
+	ship.struck.connect(func(part: ShipParts.Part, point: Vector2, hp_loss: float):
+		sea.ship_hit(ship.lane_index, point, part)
+		if hp_loss >= 0.05:
+			var text := "-%d" % roundi(hp_loss) if is_equal_approx(hp_loss, roundf(hp_loss)) else "-%.1f" % hp_loss
+			var tint := Color("#ff948c") if ship.team == ShipCombat.Team.ALLY else Color("#ffe5aa")
+			DamageFloat.caption(self, point + Vector2.UP * 20.0, text, tint, 16)
+	)
 
 
 func targets_in_lane(index: int, team: ShipCombat.Team) -> Array[ShipCombat]:
